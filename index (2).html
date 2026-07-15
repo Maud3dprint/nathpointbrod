@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#6D071A" />
+  <meta name="description" content="Nath Point Brod — broderie personnalisée, artisan d'art. Pièces uniques à réserver, retrait en atelier à Rossillon ou en magasin à Belley." />
+  <title>Nath Point Brod — broderie personnalisée</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <noscript>Cette boutique nécessite JavaScript pour fonctionner.</noscript>
+  <div id="racine"></div>
+  <script type="text/babel" data-presets="react">
+const { useState } = React;
+
+/* ================================================================== */
+/*  NATH POINT BROD — démo complète                                    */
+/*  Boutique publique + Espace gestion protégé (code démo : 1234)      */
+/* ================================================================== */
+
+const VITESSE_BRODERIE = 600; // points / minute
+const DUREE_RESA_JOURS = 7;
+const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
+
+const eur = (n) => (Math.round(n * 100) / 100).toFixed(2).replace(".", ",") + " €";
+const dansJours = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const AUJOURDHUI = new Date().toISOString().slice(0, 10);
+const dateFR = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+const limiteResa = (ts) => new Date(ts + DUREE_RESA_JOURS * 86400000).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+const ARTICLES_INIT = [
+  { ref: "BEB-001", nom: "Bavoir éponge blanc, biais terracotta & broderie bordeaux", categorie: "Bébé & Bain", tissu: "Éponge blanche", broderie: "Prénom + petite fleur", dims: "28 × 40 cm", prix: 22.9, emoji: "🍼", fond: "#FDF3C7", statut: "publié" },
+  { ref: "BEB-002", nom: "Cape de bain écrue, biais vert sauge & broderie caramel", categorie: "Bébé & Bain", tissu: "Éponge écrue", broderie: "Ourson endormi + prénom", dims: "75 × 75 cm", prix: 39.9, emoji: "🛁", fond: "#FFE3EB", statut: "publié" },
+  { ref: "NAI-001", nom: "Doudou gaze rose, biais blanc & broderie bordeaux", categorie: "Naissance", tissu: "Gaze de coton rose", broderie: "Prénom + date de naissance", dims: "30 × 30 cm", prix: 26.9, emoji: "🧸", fond: "#FFE3EB", statut: "publié" },
+  { ref: "POC-001", nom: "Trousse en jean, biais moutarde & broderie blanche", categorie: "Pochettes & Sacs", tissu: "Jean", broderie: "Initiales entrelacées", dims: "22 × 14 cm", prix: 21.9, emoji: "👝", fond: "#FDF3C7", statut: "publié" },
+  { ref: "CUI-001", nom: "Torchon écru, biais bordeaux & broderie bordeaux", categorie: "Cuisine", tissu: "Coton écru", broderie: "« La cuisine de Mamie »", dims: "50 × 70 cm", prix: 14.9, emoji: "🍳", fond: "#FFE3EB", statut: "publié" },
+];
+
+/* ------------------------------------------------------------------ */
+
+function Logo({ petit }) {
+  return (
+    <div className={"logo" + (petit ? " petit" : "")}>
+      <svg className="rayons" viewBox="0 0 40 30" aria-hidden="true">
+        <g stroke="#F3D617" strokeWidth="3" strokeLinecap="round">
+          <line x1="6" y1="24" x2="12" y2="18" /><line x1="16" y1="16" x2="19" y2="8" /><line x1="28" y1="14" x2="34" y2="8" />
+        </g>
+      </svg>
+      <div className="logo-script">Nath Point <span className="logo-brod">Brod</span><span className="smiley">☺</span></div>
+      <div className="logo-artisan">A R T I S A N &nbsp; D ’ A R T</div>
+    </div>
+  );
+}
+
+function Champ({ label, suffixe, ...props }) {
+  return (
+    <div className="champ-bloc">
+      <label className="label">{label}</label>
+      <div className="champ-ligne">
+        <input className="champ" {...props} />
+        {suffixe && <span className="suffixe">{suffixe}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Stepper({ valeur, onChange }) {
+  return (
+    <div className="stepper">
+      <button onClick={() => onChange(Math.max(0, valeur - 1))}>−</button>
+      <span>{valeur}</span>
+      <button onClick={() => onChange(valeur + 1)}>+</button>
+    </div>
+  );
+}
+
+/* ================================================================== */
+
+function NathPointBrod() {
+  const [vue, setVue] = useState("boutique");           // boutique | pin | gestion
+  const [pin, setPin] = useState("");
+  const [pinErreur, setPinErreur] = useState(false);
+  const [toast, setToast] = useState(null);
+  const montrerToast = (m) => { setToast(m); setTimeout(() => setToast(null), 2400); };
+
+  /* ---------- données partagées ---------- */
+  const [articles, setArticles] = useState(ARTICLES_INIT);
+  const [marches, setMarches] = useState([
+    { id: 1, date: dansJours(-3), lieu: "Marché de Belley" },
+    { id: 2, date: dansJours(4), lieu: "Marché de Belley" },
+    { id: 3, date: dansJours(11), lieu: "Marché d'Artemare" },
+  ]);
+  const [reservations, setReservations] = useState([]);
+
+  /* ---------- boutique ---------- */
+  const [filtre, setFiltre] = useState("Tout");
+  const [fiche, setFiche] = useState(null);
+  const [resaPour, setResaPour] = useState(null);
+  const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+  const [erreur, setErreur] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
+
+  /* ---------- gestion : référentiels du chiffrage ---------- */
+  const [categories, setCategories] = useState(["Bébé & Bain", "Naissance", "Pochettes & Sacs", "Cuisine", "Maison"]);
+  const [tissusRef, setTissusRef] = useState([
+    { nom: "Éponge blanche", prixMetre: 12, laize: 140 },
+    { nom: "Coton imprimé", prixMetre: 10, laize: 140 },
+    { nom: "Gaze de coton", prixMetre: 11, laize: 130 },
+  ]);
+  const [accRef, setAccRef] = useState([
+    { nom: "Élastique", mode: "metre", prix: 1.2, largeur: 2 },
+    { nom: "Boucle", mode: "piece", prix: 0.5 },
+    { nom: "Scratch / Velcro", mode: "metre", prix: 1.5, largeur: 2 },
+    { nom: "Bouton", mode: "piece", prix: 0.25 },
+    { nom: "Fil (hors broderie)", mode: "piece", prix: 0.2 },
+    { nom: "Biais", mode: "metre", prix: 1.6, largeur: 2 },
+    { nom: "Fermeture éclair", mode: "piece", prix: 1.2 },
+  ]);
+  const [intisseRef, setIntisseRef] = useState([
+    { nom: "Soluble", prixMetre: 6.0, laize: 30 },
+    { nom: "Déchirable", prixMetre: 4.5, laize: 30 },
+    { nom: "Collant", prixMetre: 7.0, laize: 30 },
+    { nom: "Tee-shirt / Polo", prixMetre: 5.5, laize: 30 },
+  ]);
+  const [bobinesRef, setBobinesRef] = useState([
+    { nom: "Bobine 1000 m", longueur: 1000, prix: 2.5 },
+    { nom: "Cône 5000 m", longueur: 5000, prix: 9.0 },
+  ]);
+  const [canette, setCanette] = useState({ prix: 4.0, longueur: 5000 });
+
+  /* ---------- gestion : navigation & assistant ---------- */
+  const [ongletG, setOngletG] = useState("creer");     // creer | publier | resa | marches | stock
+  const [sousEcran, setSousEcran] = useState("choix"); // choix | modeles | assistant
+  const [etape, setEtape] = useState(0);
+  const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
+  const [recherche, setRecherche] = useState("");
+  const [canalPour, setCanalPour] = useState(null);
+
+  /* ---------- pièce en cours ---------- */
+  const [nomPiece, setNomPiece] = useState("");
+  const [categorie, setCategorie] = useState("Bébé & Bain");
+  const [dimsArticle, setDimsArticle] = useState("");
+  const [tissuNom, setTissuNom] = useState("Éponge blanche");
+  const [dims, setDims] = useState({ largeur: 40, hauteur: 26 });
+  const [accUsage, setAccUsage] = useState({});
+  const [brod, setBrod] = useState({ bobine: "Bobine 1000 m", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
+  const [intisseUsage, setIntisseUsage] = useState({});
+  const [charges, setCharges] = useState({ confectionMin: 25, electricite: 0.3, usure: 1.5, salaire: 12 });
+  const [margePct, setMargePct] = useState(40);
+  const [urssafPct, setUrssafPct] = useState(13);
+  const [formCat, setFormCat] = useState(null);
+  const [formTissu, setFormTissu] = useState(null);
+  const [formAcc, setFormAcc] = useState(null);
+  const [formIntisse, setFormIntisse] = useState(null);
+
+  /* ---------- calculs du chiffrage ---------- */
+  const tissuSel = tissusRef.find((t) => t.nom === tissuNom) || tissusRef[0];
+  const surfaceM2 = ((dims.largeur || 0) / 100) * ((dims.hauteur || 0) / 100);
+  const coutTissu = tissuSel ? surfaceM2 * (tissuSel.prixMetre / (tissuSel.laize / 100)) : 0;
+  const coutAccessoires = Object.entries(accUsage).reduce((s, [nom, q]) => {
+    const a = accRef.find((x) => x.nom === nom);
+    return !a || !q ? s : s + (a.mode === "piece" ? q * a.prix : (q / 100) * a.prix);
+  }, 0);
+  const bobineSel = bobinesRef.find((b) => b.nom === brod.bobine) || bobinesRef[0];
+  const prixMetreFil = bobineSel ? bobineSel.prix / bobineSel.longueur : 0;
+  const prixMetreCanette = canette.longueur ? canette.prix / canette.longueur : 0;
+  const metresFilSup = ((brod.points || 0) / 1000) * (brod.consoSup || 0);
+  const metresFilCan = ((brod.points || 0) / 1000) * (brod.consoCan || 0);
+  const coutFil = metresFilSup * prixMetreFil + metresFilCan * prixMetreCanette;
+  const coutIntisses = Object.entries(intisseUsage).reduce((s, [nom, cm]) => {
+    const i = intisseRef.find((x) => x.nom === nom);
+    return i && cm ? s + (cm / 100) * i.prixMetre : s;
+  }, 0);
+  const minutesBroderie = (brod.points || 0) / VITESSE_BRODERIE;
+  const minutesTotal = minutesBroderie + (charges.confectionMin || 0);
+  const heures = minutesTotal / 60;
+  const coutSalaire = heures * (charges.salaire || 0);
+  const coutMachine = heures * ((charges.electricite || 0) + (charges.usure || 0));
+  const coutRevient = coutTissu + coutAccessoires + coutFil + coutIntisses + coutSalaire + coutMachine;
+  const prixAvantUrssaf = margePct < 100 ? coutRevient / (1 - margePct / 100) : coutRevient;
+  const prixFinal = urssafPct < 100 ? prixAvantUrssaf / (1 - urssafPct / 100) : prixAvantUrssaf;
+  const montantUrssaf = prixFinal * (urssafPct / 100);
+  const benefice = prixAvantUrssaf - coutRevient;
+
+  /* ---------- actions ---------- */
+  const genererRef = (cat) => {
+    const prefixe = cat.normalize("NFD").replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase() || "ART";
+    const numero = articles.filter((p) => p.ref && p.ref.startsWith(prefixe)).length + 1;
+    return `${prefixe}-${String(numero).padStart(3, "0")}`;
+  };
+
+  const nouvellePiece = () => {
+    setNomPiece(""); setCategorie(categories[0]); setDimsArticle("");
+    setTissuNom(tissusRef[0]?.nom || ""); setDims({ largeur: 40, hauteur: 26 });
+    setAccUsage({}); setIntisseUsage({});
+    setBrod({ bobine: bobinesRef[0]?.nom, points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
+    setEtape(0); setSousEcran("assistant");
+  };
+
+  const chargerPiece = (p) => {
+    setNomPiece(p.nom); setCategorie(p.categorie); setDimsArticle(p.dims || "");
+    if (p.chiffrage) {
+      setTissuNom(p.chiffrage.tissuNom); setDims({ ...p.chiffrage.dims });
+      setAccUsage({ ...p.chiffrage.accUsage }); setIntisseUsage({ ...p.chiffrage.intisseUsage });
+      setBrod({ ...p.chiffrage.brod }); setCharges({ ...p.chiffrage.charges }); setMargePct(p.chiffrage.margePct);
+    }
+    setEtape(0); setSousEcran("assistant");
+    montrerToast("Modèle chargé — tout reste modifiable");
+  };
+
+  const enregistrer = () => {
+    const ref = genererRef(categorie);
+    setArticles([...articles, {
+      ref, statut: "attente", photo: null, emoji: "🧵", fond: "#FDF3C7",
+      nom: nomPiece || "Pièce sans nom", categorie, dims: dimsArticle || "—",
+      tissu: tissuSel?.nom || "", broderie: "", prix: Math.round(prixFinal * 10) / 10,
+      chiffrage: { tissuNom, dims, accUsage, intisseUsage, brod, charges, margePct },
+    }]);
+    montrerToast(`« ${nomPiece || "Pièce"} » pré-enregistrée — réf. ${ref}`);
+    setSousEcran("choix"); setOngletG("publier");
+  };
+
+  const confirmerResa = () => {
+    if (!form.nomF.trim() || !form.prenom.trim() || !form.tel.trim() || !form.email.includes("@")) {
+      setErreur("Merci de remplir nom, prénom, téléphone et email."); return;
+    }
+    if (!form.retrait) { setErreur("Choisissez un lieu de retrait."); return; }
+    const quand = Date.now();
+    setArticles(articles.map((a) => (a.ref === resaPour.ref ? { ...a, statut: "réservé" } : a)));
+    setReservations([{ article: resaPour, ...form, quand }, ...reservations]);
+    setConfirmation({ ...resaPour, quand });
+    setResaPour(null); setFiche(null); setErreur("");
+    setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+  };
+
+  const publies = articles.filter((a) => a.statut === "publié" || a.statut === "réservé");
+  const catsBoutique = ["Tout", ...new Set(publies.map((a) => a.categorie))];
+  const visibles = filtre === "Tout" ? publies : publies.filter((a) => a.categorie === filtre);
+  const marchesAVenir = marches.filter((m) => m.date >= AUJOURDHUI).sort((a, b) => a.date.localeCompare(b.date));
+  const enAttente = articles.filter((a) => a.statut === "attente");
+
+  /* ================================================================ */
+
+  return (
+    <div className="app">
+      <style>{CSS}</style>
+
+      {/* Bascule visible uniquement dans la démo : en vrai, la gestion
+          est sur une adresse séparée que les clientes ne voient jamais */}
+      <div className="bascule">
+        <button className={vue === "boutique" ? "actif" : ""} onClick={() => setVue("boutique")}>Boutique (clientes)</button>
+        <button className={vue !== "boutique" ? "actif" : ""} onClick={() => setVue(vue === "gestion" ? "gestion" : "pin")}>
+          🔒 Espace gestion
+        </button>
+      </div>
+
+      {/* ================= CODE D'ACCÈS ================= */}
+      {vue === "pin" && (
+        <main className="contenu pin-ecran">
+          <Logo petit />
+          <p className="aide" style={{ textAlign: "center", marginTop: 18 }}>
+            Espace réservé à l’atelier.<br />Entrez votre code (démo : 1234).
+          </p>
+          <input className="champ pin-champ" type="password" inputMode="numeric" maxLength={4} value={pin}
+            onChange={(e) => {
+              const v = e.target.value; setPin(v); setPinErreur(false);
+              if (v.length === 4) {
+                if (v === "1234") { setVue("gestion"); setPin(""); }
+                else { setPinErreur(true); setPin(""); }
+              }
+            }} />
+          {pinErreur && <div className="erreur" style={{ textAlign: "center" }}>Code incorrect.</div>}
+        </main>
+      )}
+
+      {/* ================= BOUTIQUE ================= */}
+      {vue === "boutique" && (
+        <>
+          <header className="entete"><Logo /></header>
+          <div className="bandeau">
+            Chaque pièce est unique et déjà confectionnée. Un coup de cœur&nbsp;?
+            Réservez-la : elle est <strong>mise de côté 1 semaine</strong>, sans paiement en ligne.
+          </div>
+
+          {marchesAVenir.length > 0 && (
+            <div className="marches-bloc">
+              <div className="marches-titre">☀️ Retrouvez-nous prochainement</div>
+              {marchesAVenir.map((m) => (
+                <div key={m.id} className="marche-ligne">
+                  <span className="marche-date">{dateFR(m.date)}</span>
+                  <span className="marche-lieu">{m.lieu}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="chips">
+            {catsBoutique.map((c) => (
+              <button key={c} className={"chip" + (filtre === c ? " actif" : "")} onClick={() => setFiltre(c)}>{c}</button>
+            ))}
+          </div>
+
+          <main className="grille">
+            {visibles.map((a) => {
+              const prise = a.statut === "réservé";
+              return (
+                <article key={a.ref} className={"carte" + (prise ? " prise" : "")} onClick={() => !prise && setFiche(a)}>
+                  <div className="photo" style={{ background: a.fond }}>
+                    {a.photo ? <img src={a.photo} alt="" className="photo-img" /> : <span>{a.emoji}</span>}
+                    {prise && <div className="ruban">Réservée ☺</div>}
+                  </div>
+                  <div className="carte-corps">
+                    <div className="carte-cat">{a.categorie}</div>
+                    <div className="carte-nom">{a.nom}</div>
+                    <div className="carte-dims">{a.dims}</div>
+                    <div className="carte-pied">
+                      <span className="prix">{eur(a.prix)}</span>
+                      {!prise && <span className="voir">Voir ›</span>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </main>
+
+          <footer className="pied">
+            Retrait en atelier à Rossillon ou en magasin à Belley.<br />Nath Point Brod — artisan d’art ☺
+          </footer>
+        </>
+      )}
+
+      {/* ================= GESTION ================= */}
+      {vue === "gestion" && (
+        <>
+          <header className="entete"><Logo petit /></header>
+          <div className="onglets-g">
+            {[["creer", "✂️ Créer"], ["publier", `📸 Publier${enAttente.length ? ` (${enAttente.length})` : ""}`],
+              ["resa", `🎀 Résa (${reservations.length})`], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
+              <button key={id} className={"onglet-g" + (ongletG === id ? " actif" : "")}
+                onClick={() => { setOngletG(id); setSousEcran("choix"); }}>{titre}</button>
+            ))}
+          </div>
+
+          {/* ------ CRÉER : choix / modèles / assistant ------ */}
+          {ongletG === "creer" && sousEcran === "choix" && (
+            <main className="contenu">
+              <button className="grand-choix" onClick={nouvellePiece}>
+                <span className="gc-titre">✂️ Nouvelle pièce</span>
+                <span className="gc-texte">Je crée un modèle qui n’existe pas encore.</span>
+              </button>
+              <button className="grand-choix second" onClick={() => setSousEcran("modeles")}>
+                <span className="gc-titre">📂 Pièce existante</span>
+                <span className="gc-texte">Je refais un modèle déjà chiffré — tout est pré-rempli et modifiable.</span>
+              </button>
+            </main>
+          )}
+
+          {ongletG === "creer" && sousEcran === "modeles" && (
+            <main className="contenu">
+              <button className="retour-lien" onClick={() => setSousEcran("choix")}>← Retour</button>
+              {articles.filter((a) => a.chiffrage).length === 0 ? (
+                <div className="vide-msg">Aucune pièce chiffrée pour l’instant : créez une nouvelle pièce, elle apparaîtra ici dans sa catégorie.</div>
+              ) : (
+                [...new Set(articles.filter((a) => a.chiffrage).map((a) => a.categorie))].map((cat) => (
+                  <section key={cat}>
+                    <h3 className="titre-section">{cat}</h3>
+                    {articles.filter((a) => a.chiffrage && a.categorie === cat).map((p) => (
+                      <button key={p.ref} className="modele-ligne" onClick={() => chargerPiece(p)}>
+                        <span>{p.nom} · {eur(p.prix)}</span><span className="modele-fleche">›</span>
+                      </button>
+                    ))}
+                  </section>
+                ))
+              )}
+            </main>
+          )}
+
+          {ongletG === "creer" && sousEcran === "assistant" && (
+            <main className="contenu">
+              <div className="etapes">
+                {ETAPES.map((e, i) => (
+                  <button key={e} className={"etape" + (i === etape ? " actif" : i < etape ? " fait" : "")} onClick={() => setEtape(i)}>
+                    <span className="etape-rond">{i < etape ? "✓" : i + 1}</span>
+                    <span className="etape-nom">{e}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Étape 0 : pièce, catégorie, dimensions affichées */}
+              {etape === 0 && (
+                <section>
+                  <Champ label="Titre de la pièce (avec couleurs du biais et de la broderie)"
+                    placeholder="ex. Bavoir éponge blanc, biais terracotta & broderie bordeaux"
+                    value={nomPiece} onChange={(e) => setNomPiece(e.target.value)} />
+                  <Champ label="Dimensions de l’article (affichées en boutique)" placeholder="ex. 28 × 40 cm"
+                    value={dimsArticle} onChange={(e) => setDimsArticle(e.target.value)} />
+                  <label className="label">Catégorie</label>
+                  <div className="choix-grille">
+                    {categories.map((c) => (
+                      <button key={c} className={"choix-case" + (categorie === c ? " choisi" : "")} onClick={() => setCategorie(c)}>{c}</button>
+                    ))}
+                    <button className="choix-case ajout" onClick={() => setFormCat(formCat === null ? "" : null)}>+ Nouvelle</button>
+                  </div>
+                  {formCat !== null && (
+                    <div className="ajout-form">
+                      <input className="champ" placeholder="Nom de la catégorie" autoFocus value={formCat}
+                        onChange={(e) => setFormCat(e.target.value)} />
+                      <button className="btn-principal petit" onClick={() => {
+                        if (!formCat.trim()) return;
+                        setCategories([...categories, formCat.trim()]); setCategorie(formCat.trim()); setFormCat(null);
+                      }}>Ajouter</button>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Étape 1 : tissu */}
+              {etape === 1 && (
+                <section>
+                  <label className="label">Tissu utilisé</label>
+                  <div className="choix-grille">
+                    {tissusRef.map((t) => (
+                      <button key={t.nom} className={"choix-case" + (tissuNom === t.nom ? " choisi" : "")} onClick={() => setTissuNom(t.nom)}>{t.nom}</button>
+                    ))}
+                    <button className="choix-case ajout" onClick={() => setFormTissu(formTissu ? null : { nom: "", prixMetre: "", laize: 140 })}>+ Nouveau tissu</button>
+                  </div>
+                  {formTissu && (
+                    <div className="ajout-form colonne">
+                      <input className="champ" placeholder="Nom du tissu" autoFocus value={formTissu.nom}
+                        onChange={(e) => setFormTissu({ ...formTissu, nom: e.target.value })} />
+                      <div className="deux-cols">
+                        <Champ label="Prix" suffixe="€ / m" type="number" inputMode="decimal" value={formTissu.prixMetre}
+                          onChange={(e) => setFormTissu({ ...formTissu, prixMetre: +e.target.value })} />
+                        <Champ label="Laize" suffixe="cm" type="number" inputMode="numeric" value={formTissu.laize}
+                          onChange={(e) => setFormTissu({ ...formTissu, laize: +e.target.value })} />
+                      </div>
+                      <button className="btn-principal petit" onClick={() => {
+                        if (!formTissu.nom.trim() || !formTissu.prixMetre) return;
+                        setTissusRef([...tissusRef, { ...formTissu, nom: formTissu.nom.trim() }]);
+                        setTissuNom(formTissu.nom.trim()); setFormTissu(null);
+                      }}>Ajouter le tissu</button>
+                    </div>
+                  )}
+                  {tissuSel && <div className="info-calc">{tissuSel.nom} : {eur(tissuSel.prixMetre)} / m — laize {tissuSel.laize} cm</div>}
+                  <label className="label">Dimensions du tissu découpé</label>
+                  <div className="champ-ligne">
+                    <input className="champ mini" type="number" inputMode="decimal" value={dims.largeur}
+                      onChange={(e) => setDims({ ...dims, largeur: +e.target.value })} />
+                    <span className="suffixe">×</span>
+                    <input className="champ mini" type="number" inputMode="decimal" value={dims.hauteur}
+                      onChange={(e) => setDims({ ...dims, hauteur: +e.target.value })} />
+                    <span className="suffixe">cm — le calcul se fait tout seul</span>
+                  </div>
+                  <div className="sous-total">Tissu : <strong>{eur(coutTissu)}</strong></div>
+                </section>
+              )}
+
+              {/* Étape 2 : accessoires */}
+              {etape === 2 && (
+                <section>
+                  <p className="aide">À la pièce : quantité. Au mètre : centimètres utilisés.</p>
+                  {accRef.map((a) => {
+                    const q = accUsage[a.nom] || 0;
+                    const actif = q > 0;
+                    return (
+                      <div key={a.nom} className={"acc-ligne" + (actif ? " actif" : "")}>
+                        <button className="acc-nom" onClick={() => setAccUsage({ ...accUsage, [a.nom]: actif ? 0 : a.mode === "piece" ? 1 : 20 })}>
+                          <span className="acc-coche">{actif ? "✓" : ""}</span>
+                          <span>{a.nom}<small className="acc-detail">{a.mode === "piece" ? `${eur(a.prix)} / pièce` : `${eur(a.prix)} / m · larg. ${a.largeur} cm`}</small></span>
+                        </button>
+                        {actif && (a.mode === "piece" ? (
+                          <Stepper valeur={q} onChange={(v) => setAccUsage({ ...accUsage, [a.nom]: v })} />
+                        ) : (
+                          <div className="champ-ligne">
+                            <input className="champ mini" type="number" inputMode="numeric" value={q}
+                              onChange={(e) => setAccUsage({ ...accUsage, [a.nom]: +e.target.value })} />
+                            <span className="suffixe">cm</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  <button className="lien-ajout" onClick={() => setFormAcc(formAcc ? null : { nom: "", mode: "piece", prix: "", largeur: 2 })}>+ Ajouter un accessoire</button>
+                  {formAcc && (
+                    <div className="ajout-form colonne">
+                      <input className="champ" placeholder="Nom de l'accessoire" autoFocus value={formAcc.nom}
+                        onChange={(e) => setFormAcc({ ...formAcc, nom: e.target.value })} />
+                      <div className="choix-grille">
+                        <button className={"choix-case" + (formAcc.mode === "piece" ? " choisi" : "")} onClick={() => setFormAcc({ ...formAcc, mode: "piece" })}>à la pièce</button>
+                        <button className={"choix-case" + (formAcc.mode === "metre" ? " choisi" : "")} onClick={() => setFormAcc({ ...formAcc, mode: "metre" })}>au mètre</button>
+                      </div>
+                      <div className="deux-cols">
+                        <Champ label="Prix" suffixe={formAcc.mode === "piece" ? "€ / pièce" : "€ / m"} type="number" inputMode="decimal" step="0.05"
+                          value={formAcc.prix} onChange={(e) => setFormAcc({ ...formAcc, prix: +e.target.value })} />
+                        {formAcc.mode === "metre" && (
+                          <Champ label="Largeur" suffixe="cm" type="number" inputMode="decimal" value={formAcc.largeur}
+                            onChange={(e) => setFormAcc({ ...formAcc, largeur: +e.target.value })} />
+                        )}
+                      </div>
+                      <button className="btn-principal petit" onClick={() => {
+                        if (!formAcc.nom.trim() || !formAcc.prix) return;
+                        setAccRef([...accRef, { ...formAcc, nom: formAcc.nom.trim() }]); setFormAcc(null);
+                      }}>Ajouter l'accessoire</button>
+                    </div>
+                  )}
+                  <div className="sous-total">Accessoires : <strong>{eur(coutAccessoires)}</strong></div>
+                </section>
+              )}
+
+              {/* Étape 3 : broderie */}
+              {etape === 3 && (
+                <section>
+                  <label className="label">Fil de broderie (bobine utilisée)</label>
+                  <div className="choix-grille">
+                    {bobinesRef.map((b) => (
+                      <button key={b.nom} className={"choix-case" + (brod.bobine === b.nom ? " choisi" : "")}
+                        onClick={() => setBrod({ ...brod, bobine: b.nom })}>{b.nom} — {eur(b.prix)}</button>
+                    ))}
+                  </div>
+                  <div className="deux-cols">
+                    <Champ label={`Prix ${bobineSel?.nom || "bobine"}`} suffixe="€" type="number" inputMode="decimal" step="0.10"
+                      value={bobineSel?.prix ?? ""} onChange={(e) =>
+                        setBobinesRef(bobinesRef.map((b) => b.nom === brod.bobine ? { ...b, prix: +e.target.value } : b))} />
+                    <Champ label="Prix canette (5000 m)" suffixe="€" type="number" inputMode="decimal" step="0.10"
+                      value={canette.prix} onChange={(e) => setCanette({ ...canette, prix: +e.target.value })} />
+                  </div>
+                  <div className="deux-cols">
+                    <Champ label="Nombre de points" type="number" inputMode="numeric" value={brod.points}
+                      onChange={(e) => setBrod({ ...brod, points: +e.target.value })} />
+                    <div className="champ-bloc">
+                      <label className="label">Dimensions broderie</label>
+                      <div className="champ-ligne">
+                        <input className="champ mini" type="number" inputMode="decimal" value={brod.largeur}
+                          onChange={(e) => setBrod({ ...brod, largeur: +e.target.value })} />
+                        <span className="suffixe">×</span>
+                        <input className="champ mini" type="number" inputMode="decimal" value={brod.hauteur}
+                          onChange={(e) => setBrod({ ...brod, hauteur: +e.target.value })} />
+                        <span className="suffixe">cm</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="info-calc">
+                    🧵 {Math.round(metresFilSup)} m de fil + {Math.round(metresFilCan)} m de canette
+                    (5 m + 3,5 m / 1000 points) · ⏱ {Math.round(minutesBroderie)} min de machine
+                  </div>
+                  <label className="label">Intissés utilisés</label>
+                  {intisseRef.map((i) => {
+                    const cm = intisseUsage[i.nom] || 0;
+                    const actif = cm > 0;
+                    return (
+                      <div key={i.nom} className={"acc-ligne" + (actif ? " actif" : "")}>
+                        <button className="acc-nom" onClick={() => setIntisseUsage({ ...intisseUsage, [i.nom]: actif ? 0 : 20 })}>
+                          <span className="acc-coche">{actif ? "✓" : ""}</span>
+                          <span>{i.nom}<small className="acc-detail">{eur(i.prixMetre)} / m · laize {i.laize} cm</small></span>
+                        </button>
+                        {actif && (
+                          <div className="champ-ligne">
+                            <input className="champ mini" type="number" inputMode="numeric" value={cm}
+                              onChange={(e) => setIntisseUsage({ ...intisseUsage, [i.nom]: +e.target.value })} />
+                            <span className="suffixe">cm</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button className="lien-ajout" onClick={() => setFormIntisse(formIntisse ? null : { nom: "", prixMetre: "", laize: 30 })}>+ Ajouter une matière</button>
+                  {formIntisse && (
+                    <div className="ajout-form colonne">
+                      <input className="champ" placeholder="Nom de la matière" autoFocus value={formIntisse.nom}
+                        onChange={(e) => setFormIntisse({ ...formIntisse, nom: e.target.value })} />
+                      <div className="deux-cols">
+                        <Champ label="Prix" suffixe="€ / m" type="number" inputMode="decimal" step="0.10" value={formIntisse.prixMetre}
+                          onChange={(e) => setFormIntisse({ ...formIntisse, prixMetre: +e.target.value })} />
+                        <Champ label="Laize" suffixe="cm" type="number" inputMode="numeric" value={formIntisse.laize}
+                          onChange={(e) => setFormIntisse({ ...formIntisse, laize: +e.target.value })} />
+                      </div>
+                      <button className="btn-principal petit" onClick={() => {
+                        if (!formIntisse.nom.trim() || !formIntisse.prixMetre) return;
+                        setIntisseRef([...intisseRef, { ...formIntisse, nom: formIntisse.nom.trim() }]); setFormIntisse(null);
+                      }}>Ajouter la matière</button>
+                    </div>
+                  )}
+                  <div className="sous-total">Broderie : <strong>{eur(coutFil + coutIntisses)}</strong></div>
+                </section>
+              )}
+
+              {/* Étape 4 : charges */}
+              {etape === 4 && (
+                <section>
+                  <p className="aide">Ces valeurs se règlent une fois pour toutes. L’URSSAF se calcule à l’étape Prix, sur le prix final.</p>
+                  <Champ label="Temps de confection (hors broderie)" suffixe="min" type="number" inputMode="numeric"
+                    value={charges.confectionMin} onChange={(e) => setCharges({ ...charges, confectionMin: +e.target.value })} />
+                  <div className="deux-cols">
+                    <Champ label="Électricité" suffixe="€ / h" type="number" inputMode="decimal" step="0.05" value={charges.electricite}
+                      onChange={(e) => setCharges({ ...charges, electricite: +e.target.value })} />
+                    <Champ label="Usure machine" suffixe="€ / h" type="number" inputMode="decimal" step="0.10" value={charges.usure}
+                      onChange={(e) => setCharges({ ...charges, usure: +e.target.value })} />
+                  </div>
+                  <Champ label="Salaire" suffixe="€ / h" type="number" inputMode="decimal" value={charges.salaire}
+                    onChange={(e) => setCharges({ ...charges, salaire: +e.target.value })} />
+                  <div className="info-calc">⏱ Temps total : {Math.round(minutesTotal)} min ({Math.round(minutesBroderie)} broderie + {charges.confectionMin || 0} confection)</div>
+                  <div className="sous-total">Main d'œuvre + machine : <strong>{eur(coutSalaire + coutMachine)}</strong></div>
+                </section>
+              )}
+
+              {/* Étape 5 : prix */}
+              {etape === 5 && (
+                <section>
+                  <div className="recap">
+                    <div className="recap-ligne"><span>Tissu ({tissuSel?.nom})</span><span>{eur(coutTissu)}</span></div>
+                    <div className="recap-ligne"><span>Accessoires</span><span>{eur(coutAccessoires)}</span></div>
+                    <div className="recap-ligne"><span>Fil de broderie</span><span>{eur(coutFil)}</span></div>
+                    <div className="recap-ligne"><span>Intissés</span><span>{eur(coutIntisses)}</span></div>
+                    <div className="recap-ligne"><span>Salaire ({Math.round(minutesTotal)} min)</span><span>{eur(coutSalaire)}</span></div>
+                    <div className="recap-ligne"><span>Électricité + usure machine</span><span>{eur(coutMachine)}</span></div>
+                    <div className="recap-ligne total"><span>Coût de revient</span><span>{eur(coutRevient)}</span></div>
+                  </div>
+                  <label className="label">Marge : {margePct} %</label>
+                  <input type="range" min="0" max="70" value={margePct} className="curseur" onChange={(e) => setMargePct(+e.target.value)} />
+                  <div className="recap" style={{ marginTop: 12 }}>
+                    <div className="recap-ligne"><span>Coût + bénéfice ({eur(benefice)})</span><span>{eur(prixAvantUrssaf)}</span></div>
+                    <div className="recap-ligne"><span>URSSAF {urssafPct} % du prix final</span><span>{eur(montantUrssaf)}</span></div>
+                  </div>
+                  <div className="prix-final">
+                    <div>
+                      <div className="pf-label">Prix de vente client</div>
+                      <div className="pf-valeur">{eur(prixFinal)}</div>
+                    </div>
+                    <div className="pf-benef">bénéfice net {eur(benefice)}</div>
+                  </div>
+                  <button className="btn-principal" onClick={enregistrer}>Pré-enregistrer « {nomPiece || "la pièce"} »</button>
+                </section>
+              )}
+
+              <div className="nav-bas">
+                <button className="btn-secondaire" onClick={() => (etape === 0 ? setSousEcran("choix") : setEtape(etape - 1))}>
+                  ← {etape === 0 ? "Quitter" : "Retour"}
+                </button>
+                {etape < ETAPES.length - 1 && (
+                  <button className="btn-principal petit" onClick={() => setEtape(etape + 1)}>Suivant →</button>
+                )}
+              </div>
+            </main>
+          )}
+
+          {/* ------ PUBLIER ------ */}
+          {ongletG === "publier" && (
+            <main className="contenu">
+              {enAttente.length === 0 ? (
+                <div className="vide-msg">Rien en attente : toutes vos pièces ont leur photo et sont publiées.</div>
+              ) : (
+                enAttente.map((p) => (
+                  <div key={p.ref} className="publier-carte">
+                    <div className="publier-haut">
+                      {p.photo ? (
+                        <img src={p.photo} alt="" className="photo-mini-img" />
+                      ) : (
+                        <label className="photo-bouton">📷 Photo
+                          <input type="file" accept="image/*" capture="environment" className="photo-input"
+                            onChange={(e) => {
+                              const f = e.target.files && e.target.files[0];
+                              if (!f) return;
+                              const r = new FileReader();
+                              r.onload = () => setArticles((prev) => prev.map((x) => x.ref === p.ref ? { ...x, photo: r.result } : x));
+                              r.readAsDataURL(f);
+                            }} />
+                        </label>
+                      )}
+                      <div className="ligne-infos">
+                        <div className="ligne-nom">{p.nom} · {eur(p.prix)}</div>
+                        <div className="ligne-detail">{p.categorie} · {p.dims}</div>
+                        <span className="ref-badge">{p.ref}</span>
+                      </div>
+                    </div>
+                    <button className={"btn-principal petit" + (p.photo ? "" : " inactif")} disabled={!p.photo}
+                      onClick={() => {
+                        setArticles(articles.map((x) => x.ref === p.ref ? { ...x, statut: "publié", datePub: Date.now() } : x));
+                        montrerToast(`${p.ref} publié — visible en boutique`);
+                      }}>
+                      {p.photo ? "Publier maintenant" : "Ajoutez la photo pour publier"}
+                    </button>
+                  </div>
+                ))
+              )}
+            </main>
+          )}
+
+          {/* ------ RÉSERVATIONS ------ */}
+          {ongletG === "resa" && (
+            <main className="contenu">
+              <p className="aide">📧 Avec Brevo : confirmation automatique à la réservation + rappel 2 jours avant la fin de la semaine de mise de côté.</p>
+              {reservations.length === 0 ? (
+                <div className="vide-msg">Aucune réservation. Passez côté Boutique et réservez une pièce pour voir ce que vous recevrez.</div>
+              ) : (
+                reservations.map((r, i) => (
+                  <div key={i} className="resa-carte">
+                    <div className="resa-article">{r.article.nom} · {eur(r.article.prix)} <span className="ref-badge">{r.article.ref}</span></div>
+                    <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
+                    <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
+                    <div className="resa-detail">📍 Retrait : {r.retrait}</div>
+                    <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}</div>
+                    <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
+                  </div>
+                ))
+              )}
+            </main>
+          )}
+
+          {/* ------ MARCHÉS ------ */}
+          {ongletG === "marches" && (
+            <main className="contenu">
+              <p className="aide">Vos marchés s’affichent sur la boutique et disparaissent tout seuls une fois la date passée.</p>
+              <div className="deux-cols">
+                <div className="champ-bloc">
+                  <label className="label">Date</label>
+                  <input className="champ" type="date" value={nvMarche.date}
+                    onChange={(e) => setNvMarche({ ...nvMarche, date: e.target.value })} />
+                </div>
+                <div className="champ-bloc">
+                  <label className="label">Lieu</label>
+                  <input className="champ" placeholder="ex. Marché de Belley" value={nvMarche.lieu}
+                    onChange={(e) => setNvMarche({ ...nvMarche, lieu: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn-principal" onClick={() => {
+                if (!nvMarche.date || !nvMarche.lieu.trim()) return;
+                setMarches([...marches, { id: Date.now(), date: nvMarche.date, lieu: nvMarche.lieu.trim() }]);
+                setNvMarche({ date: "", lieu: "" });
+                montrerToast("Marché ajouté — visible sur la boutique");
+              }}>Ajouter ce marché</button>
+              {[...marches].sort((a, b) => b.date.localeCompare(a.date)).map((m) => {
+                const passe = m.date < AUJOURDHUI;
+                return (
+                  <div key={m.id} className={"ligne" + (passe ? " passe" : "")}>
+                    <div className="ligne-infos">
+                      <div className="ligne-nom">{m.lieu}</div>
+                      <div className="ligne-detail">{dateFR(m.date)}{passe && " — passé, masqué de la boutique"}</div>
+                    </div>
+                    <button className="btn-suppr" onClick={() => setMarches(marches.filter((x) => x.id !== m.id))}>✕</button>
+                  </div>
+                );
+              })}
+            </main>
+          )}
+
+          {/* ------ STOCK ------ */}
+          {ongletG === "stock" && (
+            <main className="contenu">
+              <input className="champ" placeholder="🔍 Référence (ex. BEB-001) ou nom…" value={recherche}
+                onChange={(e) => setRecherche(e.target.value)} />
+              {(() => {
+                const stockActif = articles.filter((a) => a.statut === "publié" || a.statut === "réservé");
+                const compte = {};
+                stockActif.forEach((a) => { compte[a.categorie] = (compte[a.categorie] || 0) + 1; });
+                const q = recherche.trim().toLowerCase();
+                const liste = stockActif.filter((a) => !q || a.ref.toLowerCase().includes(q) || a.nom.toLowerCase().includes(q));
+                return (
+                  <>
+                    <div className="chips" style={{ padding: "10px 0 4px" }}>
+                      <span className="chip actif">Tout ({stockActif.length})</span>
+                      {Object.entries(compte).map(([c, n]) => <span key={c} className="chip">{c} ({n})</span>)}
+                    </div>
+                    {liste.map((a) => (
+                      <div key={a.ref} className="ligne">
+                        <div className="photo-mini" style={{ background: a.fond }}>
+                          {a.photo ? <img src={a.photo} alt="" className="photo-mini-img" /> : a.emoji}
+                        </div>
+                        <div className="ligne-infos">
+                          <div className="ligne-nom">{a.nom}</div>
+                          <div className="ligne-detail">
+                            {eur(a.prix)} · {a.dims} · <span className="ref-badge">{a.ref}</span>
+                            {a.statut === "réservé" && <span className="badge-resa"> réservé</span>}
+                          </div>
+                        </div>
+                        {canalPour === a.ref ? (
+                          <div className="canaux">
+                            {["Marché", "Magasin", "Site"].map((c) => (
+                              <button key={c} className="canal" onClick={() => {
+                                setArticles(articles.map((x) => x.ref === a.ref ? { ...x, statut: "vendu", canal: c } : x));
+                                setCanalPour(null);
+                                montrerToast(`${a.ref} vendu (${c.toLowerCase()}) — retiré de la boutique`);
+                              }}>{c}</button>
+                            ))}
+                          </div>
+                        ) : (
+                          <button className="btn-vendu" onClick={() => setCanalPour(a.ref)}>Vendu</button>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+            </main>
+          )}
+        </>
+      )}
+
+      {/* ================= FICHE ARTICLE ================= */}
+      {fiche && !resaPour && (
+        <div className="voile" onClick={() => setFiche(null)}>
+          <div className="panneau" onClick={(e) => e.stopPropagation()}>
+            <button className="fermer" onClick={() => setFiche(null)}>✕</button>
+            <div className="photo grande" style={{ background: fiche.fond }}>
+              {fiche.photo ? <img src={fiche.photo} alt="" className="photo-img" /> : <span>{fiche.emoji}</span>}
+            </div>
+            <div className="panneau-corps">
+              <div className="carte-cat">{fiche.categorie}</div>
+              <h2 className="panneau-nom">{fiche.nom}</h2>
+              {fiche.broderie && <p className="panneau-desc">{fiche.broderie}</p>}
+              <div className="details">
+                <div className="detail-ligne"><span>Dimensions</span><span>{fiche.dims}</span></div>
+                <div className="detail-ligne"><span>Tissu</span><span>{fiche.tissu}</span></div>
+                <div className="detail-ligne"><span>Référence</span><span>{fiche.ref}</span></div>
+              </div>
+              <div className="panneau-pied">
+                <span className="prix grand">{eur(fiche.prix)}</span>
+                <button className="btn-principal petit" onClick={() => setResaPour(fiche)}>Réserver cette pièce</button>
+              </div>
+              <p className="note-resa">
+                Réservation gratuite : la pièce est <strong>mise de côté 1 semaine</strong> à compter d’aujourd’hui.
+                Règlement au retrait, en atelier à Rossillon ou en magasin à Belley.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= FORMULAIRE RÉSERVATION ================= */}
+      {resaPour && (
+        <div className="voile" onClick={() => setResaPour(null)}>
+          <div className="panneau" onClick={(e) => e.stopPropagation()}>
+            <button className="fermer" onClick={() => setResaPour(null)}>✕</button>
+            <div className="panneau-corps">
+              <h2 className="panneau-nom">Réserver : {resaPour.nom}</h2>
+              <p className="panneau-desc">{resaPour.dims} — {eur(resaPour.prix)}</p>
+              <div className="deux-cols">
+                <div className="champ-bloc">
+                  <label className="label">Prénom *</label>
+                  <input className="champ" autoFocus value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} />
+                </div>
+                <div className="champ-bloc">
+                  <label className="label">Nom *</label>
+                  <input className="champ" value={form.nomF} onChange={(e) => setForm({ ...form, nomF: e.target.value })} />
+                </div>
+              </div>
+              <label className="label">Téléphone *</label>
+              <input className="champ" type="tel" inputMode="tel" placeholder="06 12 34 56 78" value={form.tel}
+                onChange={(e) => setForm({ ...form, tel: e.target.value })} />
+              <label className="label">Email *</label>
+              <input className="champ" type="email" inputMode="email" placeholder="vous@exemple.fr" value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <label className="label">Retrait de la pièce *</label>
+              <div className="retraits">
+                {["En atelier à Rossillon", "En magasin à Belley"].map((r) => (
+                  <button key={r} className={"retrait" + (form.retrait === r ? " choisi" : "")}
+                    onClick={() => setForm({ ...form, retrait: r })}>{r}</button>
+                ))}
+              </div>
+              <div className="encart-duree">
+                ⏳ Votre pièce est mise de côté <strong>1 semaine</strong> à compter d’aujourd’hui —
+                jusqu’au <strong>{limiteResa(Date.now())}</strong>. Passé ce délai, elle est remise en boutique.
+              </div>
+              <label className="case">
+                <input type="checkbox" checked={form.nlOk} onChange={(e) => setForm({ ...form, nlOk: e.target.checked })} />
+                <span>J’accepte de recevoir la newsletter des nouveautés de Nath Point Brod (1 email par mois environ).</span>
+              </label>
+              {erreur && <div className="erreur">{erreur}</div>}
+              <button className="btn-principal" onClick={confirmerResa}>Confirmer la réservation</button>
+              <p className="note-resa">Aucun paiement en ligne. Vous recevrez un email de confirmation, puis un rappel avant la fin de la mise de côté.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= CONFIRMATION ================= */}
+      {confirmation && (
+        <div className="voile" onClick={() => setConfirmation(null)}>
+          <div className="panneau confirmation" onClick={(e) => e.stopPropagation()}>
+            <div className="conf-icone">☺</div>
+            <h2 className="panneau-nom centre">C’est réservé !</h2>
+            <p className="panneau-desc centre">
+              Votre pièce est mise de côté jusqu’au <strong>{limiteResa(confirmation.quand)}</strong>.
+              Un email de confirmation vous est envoyé, et un petit rappel 2 jours avant la fin — votre pièce vous attend ☺
+            </p>
+            <button className="btn-principal" onClick={() => setConfirmation(null)}>Continuer la visite</button>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Styles — charte Nath Point Brod                                    */
+/* ================================================================== */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&family=Caveat:wght@600;700&display=swap');
+
+:root {
+  --jaune: #F3D617; --rose: #FFB8CC; --bordeaux: #6D071A;
+  --fond: #FFFDF8; --encre: #3A3234; --carte: #FFFFFF; --rose-pale: #FFEFF4;
+}
+* { box-sizing: border-box; margin: 0; }
+.app { max-width: 430px; margin: 0 auto; min-height: 100vh; background: var(--fond); color: var(--encre); font-family: 'Poppins', -apple-system, sans-serif; font-weight: 300; padding-bottom: 24px; }
+
+.bascule { display: flex; background: var(--rose-pale); }
+.bascule button { flex: 1; border: none; background: transparent; padding: 11px; font-family: 'Poppins', sans-serif; font-size: 12.5px; color: var(--bordeaux); }
+.bascule button.actif { background: var(--bordeaux); color: #fff; font-weight: 600; }
+
+.entete { text-align: center; padding: 18px 16px 8px; }
+.logo { display: inline-block; position: relative; padding-top: 14px; }
+.logo.petit { transform: scale(0.78); padding-top: 8px; }
+.rayons { position: absolute; top: 0; left: -12px; width: 38px; height: 28px; }
+.logo-script { font-family: 'Caveat', cursive; font-size: 38px; font-weight: 600; color: var(--encre); line-height: 1; }
+.logo-brod { color: var(--bordeaux); font-weight: 700; }
+.smiley { color: var(--jaune); font-size: 26px; vertical-align: super; margin-left: 2px; }
+.logo-artisan { font-size: 9px; letter-spacing: 3px; color: var(--bordeaux); margin-top: 4px; font-weight: 400; }
+
+.bandeau { margin: 10px 14px; font-size: 12.5px; line-height: 1.55; background: var(--rose-pale); border-radius: 14px; padding: 12px 16px; text-align: center; }
+.marches-bloc { margin: 0 14px 6px; background: var(--carte); border: 2px solid var(--jaune); border-radius: 14px; padding: 12px 16px; }
+.marches-titre { font-size: 12px; font-weight: 600; color: var(--bordeaux); margin-bottom: 6px; }
+.marche-ligne { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; }
+.marche-date { text-transform: capitalize; }
+.marche-lieu { font-weight: 600; color: var(--bordeaux); }
+
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 8px 14px 12px; -webkit-overflow-scrolling: touch; }
+.chip { flex: 0 0 auto; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-family: 'Poppins', sans-serif; }
+.chip.actif { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; font-weight: 600; }
+
+.grille { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 14px; }
+.carte { background: var(--carte); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(109,7,26,0.07); }
+.carte.prise { opacity: 0.6; }
+.photo { width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 46px; position: relative; overflow: hidden; }
+.photo.grande { font-size: 72px; }
+.photo-img { width: 100%; height: 100%; object-fit: cover; }
+.ruban { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+.carte-corps { padding: 10px 11px 12px; }
+.carte-cat { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--bordeaux); font-weight: 600; }
+.carte-nom { font-size: 12.5px; font-weight: 600; margin: 3px 0 2px; line-height: 1.35; }
+.carte-dims { font-size: 11px; color: #8B8082; }
+.carte-pied { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; }
+.prix { font-weight: 600; font-size: 15px; }
+.prix.grand { font-size: 24px; color: var(--bordeaux); }
+.voir { font-size: 12px; color: var(--bordeaux); font-weight: 600; }
+.pied { text-align: center; font-size: 11.5px; color: #8B8082; padding: 26px 20px 8px; line-height: 1.7; }
+
+.pin-ecran { text-align: center; padding-top: 40px; }
+.pin-champ { max-width: 140px; margin: 14px auto 0; text-align: center; font-size: 24px; letter-spacing: 10px; }
+
+.onglets-g { display: flex; gap: 6px; padding: 8px 12px 4px; overflow-x: auto; }
+.onglet-g { flex: 0 0 auto; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 999px; padding: 9px 12px; font-size: 12px; font-family: 'Poppins', sans-serif; }
+.onglet-g.actif { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; font-weight: 600; }
+.contenu { padding: 12px 14px 24px; }
+.aide { font-size: 12px; color: #8B8082; margin-bottom: 12px; line-height: 1.5; }
+.vide-msg { text-align: center; color: #8B8082; font-size: 13px; padding: 34px 20px; border: 2px dashed var(--rose); border-radius: 14px; line-height: 1.6; }
+.retour-lien { border: none; background: none; color: var(--bordeaux); font-size: 14px; padding: 6px 0 12px; }
+.titre-section { font-size: 13px; font-weight: 600; color: var(--bordeaux); margin: 12px 0 8px; }
+
+.grand-choix { display: block; width: 100%; text-align: left; background: var(--carte); border: 2px solid var(--jaune); border-radius: 16px; padding: 18px; margin-bottom: 14px; color: var(--encre); font-family: 'Poppins', sans-serif; }
+.grand-choix.second { border-color: var(--rose); }
+.gc-titre { font-size: 17px; font-weight: 600; display: block; color: var(--bordeaux); }
+.gc-texte { font-size: 12.5px; color: #8B8082; display: block; margin-top: 4px; line-height: 1.4; }
+.modele-ligne { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--carte); border: none; border-radius: 12px; padding: 14px; margin-bottom: 8px; font-size: 13.5px; color: var(--encre); font-family: 'Poppins', sans-serif; box-shadow: 0 1px 3px rgba(109,7,26,0.06); text-align: left; gap: 8px; }
+.modele-fleche { color: var(--bordeaux); font-size: 20px; }
+
+.etapes { display: flex; justify-content: space-between; margin-bottom: 14px; }
+.etape { border: none; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; padding: 0; }
+.etape-rond { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--rose); display: flex; align-items: center; justify-content: center; font-size: 11px; color: #8B8082; background: var(--carte); }
+.etape.actif .etape-rond { border-color: var(--bordeaux); background: var(--bordeaux); color: #fff; }
+.etape.fait .etape-rond { border-color: var(--jaune); background: #FDF3C7; color: var(--bordeaux); }
+.etape-nom { font-size: 9px; color: #8B8082; }
+.etape.actif .etape-nom { color: var(--bordeaux); font-weight: 600; }
+
+.label { display: block; font-size: 11.5px; font-weight: 600; margin: 12px 0 5px; }
+.champ-bloc { flex: 1; }
+.champ-ligne { display: flex; align-items: center; gap: 6px; }
+.champ { width: 100%; padding: 12px; border: 1.5px solid #EAD9DD; border-radius: 10px; background: var(--carte); font-size: 14px; font-family: 'Poppins', sans-serif; color: var(--encre); }
+.champ.mini { width: 74px; padding: 10px 8px; text-align: center; }
+.champ:focus { outline: 2px solid var(--bordeaux); border-color: var(--bordeaux); }
+.suffixe { font-size: 11px; color: #8B8082; white-space: nowrap; }
+.deux-cols { display: flex; gap: 12px; }
+
+.choix-grille { display: flex; flex-wrap: wrap; gap: 8px; }
+.choix-case { border: 1.5px solid var(--rose); background: var(--carte); border-radius: 999px; padding: 10px 14px; font-size: 12.5px; font-family: 'Poppins', sans-serif; color: var(--encre); }
+.choix-case.choisi { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; font-weight: 600; }
+.choix-case.ajout { border-style: dashed; color: var(--bordeaux); font-weight: 600; }
+.ajout-form { margin-top: 10px; background: var(--carte); border: 1.5px dashed var(--bordeaux); border-radius: 12px; padding: 12px; display: flex; gap: 8px; align-items: center; }
+.ajout-form.colonne { flex-direction: column; align-items: stretch; }
+.lien-ajout { border: none; background: none; color: var(--bordeaux); font-size: 13.5px; font-weight: 600; padding: 12px 0 2px; text-align: left; font-family: 'Poppins', sans-serif; }
+
+.acc-ligne { background: var(--carte); border-radius: 12px; padding: 6px 10px; margin-bottom: 7px; display: flex; align-items: center; justify-content: space-between; gap: 8px; box-shadow: 0 1px 3px rgba(109,7,26,0.05); }
+.acc-ligne.actif { border: 1.5px solid var(--jaune); }
+.acc-nom { border: none; background: none; font-size: 13.5px; color: var(--encre); display: flex; align-items: center; gap: 8px; padding: 8px 0; flex: 1; text-align: left; font-family: 'Poppins', sans-serif; }
+.acc-detail { display: block; font-size: 10.5px; color: #8B8082; font-weight: 300; }
+.acc-coche { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--rose); flex: 0 0 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: var(--bordeaux); }
+.acc-ligne.actif .acc-coche { border-color: var(--bordeaux); background: var(--rose-pale); }
+.stepper { display: flex; align-items: center; gap: 2px; }
+.stepper button { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--rose); background: var(--carte); font-size: 16px; color: var(--bordeaux); }
+.stepper span { min-width: 22px; text-align: center; font-weight: 600; font-size: 14px; }
+
+.sous-total { margin-top: 14px; background: #FDF3C7; border: 1.5px solid var(--jaune); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
+.info-calc { font-size: 12px; color: #8B8082; margin-top: 10px; line-height: 1.5; }
+.recap { background: var(--carte); border-radius: 14px; padding: 6px 14px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(109,7,26,0.07); }
+.recap-ligne { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--rose-pale); color: #6E6366; }
+.recap-ligne:last-child { border-bottom: none; }
+.recap-ligne.total { font-weight: 600; font-size: 15px; color: var(--encre); }
+.curseur { width: 100%; accent-color: var(--bordeaux); }
+.prix-final { margin-top: 14px; background: var(--bordeaux); color: #fff; border-radius: 14px; padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+.pf-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85; }
+.pf-valeur { font-size: 28px; font-weight: 600; }
+.pf-benef { font-size: 12px; opacity: 0.9; text-align: right; }
+
+.btn-principal { width: 100%; margin-top: 16px; background: var(--bordeaux); color: #fff; border: none; border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 600; font-family: 'Poppins', sans-serif; }
+.btn-principal.petit { width: auto; margin: 0; padding: 12px 18px; font-size: 13px; }
+.btn-principal.inactif { opacity: 0.45; }
+.btn-secondaire { background: transparent; border: 1.5px solid var(--rose); color: var(--encre); border-radius: 12px; padding: 12px 18px; font-size: 13.5px; font-family: 'Poppins', sans-serif; }
+.nav-bas { display: flex; justify-content: space-between; margin-top: 22px; }
+
+.publier-carte { background: var(--carte); border: 2px solid var(--jaune); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+.publier-haut { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.photo-mini { width: 56px; height: 56px; border-radius: 10px; flex: 0 0 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; overflow: hidden; }
+.photo-mini-img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: 0 0 56px; }
+.photo-bouton { width: 56px; height: 56px; flex: 0 0 56px; border: 2px dashed var(--bordeaux); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--bordeaux); text-align: center; position: relative; background: var(--carte); }
+.photo-input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+.ref-badge { display: inline-block; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 1px; background: var(--rose-pale); color: var(--bordeaux); border-radius: 5px; padding: 2px 7px; }
+.badge-resa { color: var(--bordeaux); font-weight: 600; font-size: 11px; }
+
+.ligne { display: flex; gap: 10px; align-items: center; background: var(--carte); border-radius: 12px; padding: 10px; margin-top: 10px; box-shadow: 0 1px 3px rgba(109,7,26,0.05); }
+.ligne.passe { opacity: 0.55; }
+.ligne-infos { flex: 1; min-width: 0; }
+.ligne-nom { font-weight: 600; font-size: 13px; line-height: 1.35; }
+.ligne-detail { font-size: 12px; color: #8B8082; margin-top: 2px; }
+.btn-suppr { border: none; background: none; color: #C4B2B7; font-size: 15px; padding: 6px; }
+.btn-vendu { background: var(--jaune); color: var(--encre); border: none; border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; font-family: 'Poppins', sans-serif; }
+.canaux { display: flex; flex-direction: column; gap: 4px; }
+.canal { border: 1.5px solid var(--bordeaux); background: var(--carte); color: var(--bordeaux); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; font-family: 'Poppins', sans-serif; }
+
+.resa-carte { background: var(--carte); border-left: 4px solid var(--jaune); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(109,7,26,0.06); }
+.resa-article { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
+.resa-client { font-size: 13px; font-weight: 600; color: var(--bordeaux); }
+.resa-detail { font-size: 12px; color: #6E6366; margin-top: 2px; }
+
+.voile { position: fixed; inset: 0; background: rgba(58,50,52,0.5); display: flex; align-items: flex-end; justify-content: center; z-index: 30; }
+.panneau { background: var(--fond); border-radius: 18px 18px 0 0; width: 100%; max-width: 430px; max-height: 90vh; overflow-y: auto; position: relative; }
+.panneau.confirmation { padding: 28px 20px; text-align: center; border-radius: 18px; margin: 0 16px 26vh; }
+.fermer { position: absolute; top: 10px; right: 10px; z-index: 2; width: 34px; height: 34px; border-radius: 50%; border: none; background: rgba(58,50,52,0.55); color: #fff; font-size: 15px; }
+.panneau-corps { padding: 16px 18px 26px; }
+.panneau-nom { font-size: 17px; font-weight: 600; color: var(--bordeaux); margin: 2px 0 6px; line-height: 1.35; }
+.panneau-nom.centre, .panneau-desc.centre { text-align: center; }
+.panneau-desc { font-size: 13.5px; color: #6E6366; line-height: 1.5; }
+.details { background: var(--carte); border-radius: 12px; padding: 4px 14px; margin: 14px 0; }
+.detail-ligne { display: flex; justify-content: space-between; font-size: 13px; padding: 9px 0; border-bottom: 1px solid var(--rose-pale); color: #6E6366; }
+.detail-ligne:last-child { border-bottom: none; }
+.detail-ligne span:last-child { font-weight: 600; color: var(--encre); }
+.panneau-pied { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.note-resa { font-size: 11px; color: #8B8082; text-align: center; margin-top: 12px; line-height: 1.5; }
+.conf-icone { font-size: 46px; color: var(--jaune); }
+.encart-duree { margin-top: 14px; background: #FDF3C7; border: 1.5px solid var(--jaune); border-radius: 12px; padding: 11px 13px; font-size: 12px; line-height: 1.55; }
+.retraits { display: flex; gap: 8px; }
+.retrait { flex: 1; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 12px; padding: 12px 8px; font-size: 12.5px; font-family: 'Poppins', sans-serif; line-height: 1.35; color: var(--encre); }
+.retrait.choisi { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; font-weight: 600; }
+.case { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 11.5px; color: #6E6366; line-height: 1.5; }
+.case input { width: 18px; height: 18px; accent-color: var(--bordeaux); flex: 0 0 18px; margin-top: 1px; }
+.erreur { margin-top: 12px; background: #FDECEC; color: var(--bordeaux); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px; z-index: 40; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+`;
+
+
+ReactDOM.createRoot(document.getElementById("racine")).render(<NathPointBrod />);
+
+  </script>
+</body>
+</html>
