@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v5-atelier-cache-vide" />
+  <meta name="version" content="v6-firebase" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
   <script>
-    // --- Filet de sécurité : toute erreur s'affiche sur la page ---
     function afficherErreur(msg) {
       var b = document.createElement("div");
       b.style.cssText = "position:fixed;top:0;left:0;right:0;background:#6D071A;color:#fff;padding:14px;font:13px/1.5 sans-serif;z-index:9999;white-space:pre-wrap;max-height:60vh;overflow:auto";
@@ -23,38 +22,96 @@
     window.addEventListener("DOMContentLoaded", function () {
       if (typeof React === "undefined") afficherErreur("React n'a pas pu etre charge (CDN bloque ?)");
       else if (typeof Babel === "undefined") afficherErreur("Babel n'a pas pu etre charge (CDN bloque ?)");
-      else setTimeout(function () {
-        var r = document.getElementById("racine");
-        if (r && r.childNodes.length === 0) afficherErreur("La page ne s'est pas construite (aucune erreur signalee). Version du fichier : v5.");
-      }, 4000);
+      else if (typeof firebase === "undefined") afficherErreur("Firebase n'a pas pu etre charge (CDN bloque ?)");
     });
   </script>
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <noscript>Cette boutique nécessite JavaScript pour fonctionner.</noscript>
   <div id="racine"></div>
   <script type="text/babel" data-presets="react">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 /* ================================================================== */
-/*  NATH POINT BROD — démo complète                                    */
-/*  Boutique publique + Espace gestion protégé (code démo : 1234)      */
+/*  NATH POINT BROD — version branchée Firebase                       */
+/*  Boutique publique + Espace gestion (…/#atelier, connexion email)  */
 /* ================================================================== */
 
-const VITESSE_BRODERIE = 600; // points / minute
+firebase.initializeApp({
+  apiKey: "AIzaSyC6xr2zMOFBb6xzwTl9gHZP7L4CPuVuF0s",
+  authDomain: "nathpointbrod-ddcdb.firebaseapp.com",
+  projectId: "nathpointbrod-ddcdb",
+  storageBucket: "nathpointbrod-ddcdb.firebasestorage.app",
+  messagingSenderId: "159923377862",
+  appId: "1:159923377862:web:b3d37a156a949b5867e9c7",
+});
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+const VITESSE_BRODERIE = 600;
 const DUREE_RESA_JOURS = 7;
 const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
 
-const eur = (n) => (Math.round(n * 100) / 100).toFixed(2).replace(".", ",") + " €";
-const dansJours = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",") + " €";
 const AUJOURDHUI = new Date().toISOString().slice(0, 10);
 const dateFR = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 const limiteResa = (ts) => new Date(ts + DUREE_RESA_JOURS * 86400000).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
-const ARTICLES_INIT = []; // la boutique démarre vide : les pièces créées et publiées dans la gestion apparaîtront ici
+const FONDS = ["#FDF3C7", "#FFE3EB"];
+
+/* Réglages de départ (créés dans Firestore au premier passage) */
+const CONFIG_DEFAUT = {
+  categories: ["Bébé & Bain", "Naissance", "Pochettes & Sacs", "Cuisine", "Maison"],
+  tissus: [],
+  accessoires: [
+    { nom: "Élastique", mode: "metre", prix: 1.2, largeur: 2 },
+    { nom: "Boucle", mode: "piece", prix: 0.5 },
+    { nom: "Scratch / Velcro", mode: "metre", prix: 1.5, largeur: 2 },
+    { nom: "Bouton", mode: "piece", prix: 0.25 },
+    { nom: "Fil (hors broderie)", mode: "piece", prix: 0.2 },
+    { nom: "Biais", mode: "metre", prix: 1.6, largeur: 2 },
+    { nom: "Fermeture éclair", mode: "piece", prix: 1.2 },
+  ],
+  intisses: [
+    { nom: "Soluble", prixMetre: 6.0, laize: 30 },
+    { nom: "Déchirable", prixMetre: 4.5, laize: 30 },
+    { nom: "Collant", prixMetre: 7.0, laize: 30 },
+    { nom: "Tee-shirt / Polo", prixMetre: 5.5, laize: 30 },
+  ],
+  bobines: [
+    { nom: "Bobine 1000 m", longueur: 1000, prix: 2.5 },
+    { nom: "Cône 5000 m", longueur: 5000, prix: 9.0 },
+  ],
+  canette: { prix: 4.0, longueur: 5000 },
+  charges: { confectionMin: 25, electricite: 0.3, usure: 1.5, salaire: 12 },
+  urssafPct: 13,
+};
+
+/* Compression photo -> base64 (~150-300 Ko) stockée avec l'article */
+const compresserPhoto = (fichier) => new Promise((resoudre, rejeter) => {
+  const img = new Image();
+  const url = URL.createObjectURL(fichier);
+  img.onload = () => {
+    const max = 900;
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * k);
+    c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    let sortie = c.toDataURL("image/jpeg", 0.72);
+    if (sortie.length > 850000) sortie = c.toDataURL("image/jpeg", 0.5);
+    URL.revokeObjectURL(url);
+    resoudre(sortie);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); rejeter(new Error("Photo illisible")); };
+  img.src = url;
+});
 
 /* ------------------------------------------------------------------ */
 
@@ -97,21 +154,89 @@ function Stepper({ valeur, onChange }) {
 /* ================================================================== */
 
 function NathPointBrod() {
-  const [vue, setVue] = useState(window.location.hash === "#atelier" ? "pin" : "boutique"); // gestion accessible uniquement via l'adresse secrète /#atelier
-  useEffect(() => {
-    const surChangement = () => setVue(window.location.hash === "#atelier" ? "pin" : "boutique");
-    window.addEventListener("hashchange", surChangement);
-    return () => window.removeEventListener("hashchange", surChangement);
-  }, []);
-  const [pin, setPin] = useState("");
-  const [pinErreur, setPinErreur] = useState(false);
+  /* ---------- connexion & navigation ---------- */
+  const [utilisateur, setUtilisateur] = useState(null);
+  const [enAtelier, setEnAtelier] = useState(window.location.hash === "#atelier");
+  const [authForm, setAuthForm] = useState({ email: "", mdp: "" });
+  const [authErreur, setAuthErreur] = useState("");
   const [toast, setToast] = useState(null);
-  const montrerToast = (m) => { setToast(m); setTimeout(() => setToast(null), 2400); };
+  const montrerToast = (m) => { setToast(m); setTimeout(() => setToast(null), 2600); };
 
-  /* ---------- données partagées ---------- */
-  const [articles, setArticles] = useState(ARTICLES_INIT);
+  useEffect(() => auth.onAuthStateChanged((u) => setUtilisateur(u)), []);
+  useEffect(() => {
+    const f = () => setEnAtelier(window.location.hash === "#atelier");
+    window.addEventListener("hashchange", f);
+    return () => window.removeEventListener("hashchange", f);
+  }, []);
+
+  /* ---------- données temps réel ---------- */
+  const [articles, setArticles] = useState([]);
+  const [chargement, setChargement] = useState(true);
   const [marches, setMarches] = useState([]);
   const [reservations, setReservations] = useState([]);
+
+  useEffect(() => {
+    const col = db.collection("articles");
+    const requete = utilisateur ? col : col.where("statut", "in", ["publié", "réservé"]);
+    return requete.onSnapshot(
+      (s) => { setArticles(s.docs.map((d) => ({ id: d.id, ...d.data() }))); setChargement(false); },
+      (e) => { console.error("Lecture articles : " + e.message); setChargement(false); }
+    );
+  }, [utilisateur]);
+
+  useEffect(() => db.collection("marches").onSnapshot(
+    (s) => setMarches(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (e) => console.error("Lecture marchés : " + e.message)
+  ), []);
+
+  useEffect(() => {
+    if (!utilisateur) { setReservations([]); return; }
+    return db.collection("reservations").orderBy("quand", "desc").onSnapshot(
+      (s) => setReservations(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (e) => console.error("Lecture réservations : " + e.message)
+    );
+  }, [utilisateur]);
+
+  /* ---------- réglages (référentiels) ---------- */
+  const [categories, setCategories] = useState(CONFIG_DEFAUT.categories);
+  const [tissusRef, setTissusRef] = useState(CONFIG_DEFAUT.tissus);
+  const [accRef, setAccRef] = useState(CONFIG_DEFAUT.accessoires);
+  const [intisseRef, setIntisseRef] = useState(CONFIG_DEFAUT.intisses);
+  const [bobinesRef, setBobinesRef] = useState(CONFIG_DEFAUT.bobines);
+  const [canette, setCanette] = useState(CONFIG_DEFAUT.canette);
+  const [charges, setCharges] = useState(CONFIG_DEFAUT.charges);
+  const [urssafPct, setUrssafPct] = useState(CONFIG_DEFAUT.urssafPct);
+
+  useEffect(() => {
+    if (!utilisateur) return;
+    const doc = db.collection("referentiels").doc("config");
+    return doc.onSnapshot((s) => {
+      if (!s.exists) { doc.set(CONFIG_DEFAUT); return; }
+      const c = s.data();
+      if (c.categories) setCategories(c.categories);
+      if (c.tissus) setTissusRef(c.tissus);
+      if (c.accessoires) setAccRef(c.accessoires);
+      if (c.intisses) setIntisseRef(c.intisses);
+      if (c.bobines) setBobinesRef(c.bobines);
+      if (c.canette) setCanette(c.canette);
+      if (c.charges) setCharges(c.charges);
+      if (c.urssafPct) setUrssafPct(c.urssafPct);
+    }, (e) => console.error("Lecture réglages : " + e.message));
+  }, [utilisateur]);
+
+  /* écritures des réglages, regroupées (évite un envoi par frappe) */
+  const attente = useRef({ patch: {}, minuteur: null });
+  const persister = (cle, valeur) => {
+    if (!auth.currentUser) return;
+    const a = attente.current;
+    a.patch[cle] = valeur;
+    clearTimeout(a.minuteur);
+    a.minuteur = setTimeout(() => {
+      db.collection("referentiels").doc("config").set(a.patch, { merge: true })
+        .catch((e) => console.error("Sauvegarde réglages : " + e.message));
+      a.patch = {};
+    }, 800);
+  };
 
   /* ---------- boutique ---------- */
   const [filtre, setFiltre] = useState("Tout");
@@ -120,34 +245,11 @@ function NathPointBrod() {
   const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
   const [erreur, setErreur] = useState("");
   const [confirmation, setConfirmation] = useState(null);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
 
-  /* ---------- gestion : référentiels du chiffrage ---------- */
-  const [categories, setCategories] = useState(["Bébé & Bain", "Naissance", "Pochettes & Sacs", "Cuisine", "Maison"]);
-  const [tissusRef, setTissusRef] = useState([]); // elle ajoute ses tissus avec « + Nouveau tissu »
-  const [accRef, setAccRef] = useState([
-    { nom: "Élastique", mode: "metre", prix: 1.2, largeur: 2 },
-    { nom: "Boucle", mode: "piece", prix: 0.5 },
-    { nom: "Scratch / Velcro", mode: "metre", prix: 1.5, largeur: 2 },
-    { nom: "Bouton", mode: "piece", prix: 0.25 },
-    { nom: "Fil (hors broderie)", mode: "piece", prix: 0.2 },
-    { nom: "Biais", mode: "metre", prix: 1.6, largeur: 2 },
-    { nom: "Fermeture éclair", mode: "piece", prix: 1.2 },
-  ]);
-  const [intisseRef, setIntisseRef] = useState([
-    { nom: "Soluble", prixMetre: 6.0, laize: 30 },
-    { nom: "Déchirable", prixMetre: 4.5, laize: 30 },
-    { nom: "Collant", prixMetre: 7.0, laize: 30 },
-    { nom: "Tee-shirt / Polo", prixMetre: 5.5, laize: 30 },
-  ]);
-  const [bobinesRef, setBobinesRef] = useState([
-    { nom: "Bobine 1000 m", longueur: 1000, prix: 2.5 },
-    { nom: "Cône 5000 m", longueur: 5000, prix: 9.0 },
-  ]);
-  const [canette, setCanette] = useState({ prix: 4.0, longueur: 5000 });
-
-  /* ---------- gestion : navigation & assistant ---------- */
-  const [ongletG, setOngletG] = useState("creer");     // creer | publier | resa | marches | stock
-  const [sousEcran, setSousEcran] = useState("choix"); // choix | modeles | assistant
+  /* ---------- gestion ---------- */
+  const [ongletG, setOngletG] = useState("creer");
+  const [sousEcran, setSousEcran] = useState("choix");
   const [etape, setEtape] = useState(0);
   const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
   const [recherche, setRecherche] = useState("");
@@ -155,16 +257,14 @@ function NathPointBrod() {
 
   /* ---------- pièce en cours ---------- */
   const [nomPiece, setNomPiece] = useState("");
-  const [categorie, setCategorie] = useState("Bébé & Bain");
+  const [categorie, setCategorie] = useState(CONFIG_DEFAUT.categories[0]);
   const [dimsArticle, setDimsArticle] = useState("");
   const [tissuNom, setTissuNom] = useState("");
   const [dims, setDims] = useState({ largeur: 40, hauteur: 26 });
   const [accUsage, setAccUsage] = useState({});
   const [brod, setBrod] = useState({ bobine: "Bobine 1000 m", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
   const [intisseUsage, setIntisseUsage] = useState({});
-  const [charges, setCharges] = useState({ confectionMin: 25, electricite: 0.3, usure: 1.5, salaire: 12 });
   const [margePct, setMargePct] = useState(40);
-  const [urssafPct, setUrssafPct] = useState(13);
   const [formCat, setFormCat] = useState(null);
   const [formTissu, setFormTissu] = useState(null);
   const [formAcc, setFormAcc] = useState(null);
@@ -203,14 +303,14 @@ function NathPointBrod() {
   const genererRef = (cat) => {
     const prefixe = cat.normalize("NFD").replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase() || "ART";
     const numero = articles.filter((p) => p.ref && p.ref.startsWith(prefixe)).length + 1;
-    return `${prefixe}-${String(numero).padStart(3, "0")}`;
+    return prefixe + "-" + String(numero).padStart(3, "0");
   };
 
   const nouvellePiece = () => {
     setNomPiece(""); setCategorie(categories[0]); setDimsArticle("");
-    setTissuNom(tissusRef[0]?.nom || ""); setDims({ largeur: 40, hauteur: 26 });
+    setTissuNom(tissusRef[0] ? tissusRef[0].nom : ""); setDims({ largeur: 40, hauteur: 26 });
     setAccUsage({}); setIntisseUsage({});
-    setBrod({ bobine: bobinesRef[0]?.nom, points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
+    setBrod({ bobine: bobinesRef[0] ? bobinesRef[0].nom : "", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
     setEtape(0); setSousEcran("assistant");
   };
 
@@ -219,7 +319,7 @@ function NathPointBrod() {
     if (p.chiffrage) {
       setTissuNom(p.chiffrage.tissuNom); setDims({ ...p.chiffrage.dims });
       setAccUsage({ ...p.chiffrage.accUsage }); setIntisseUsage({ ...p.chiffrage.intisseUsage });
-      setBrod({ ...p.chiffrage.brod }); setCharges({ ...p.chiffrage.charges }); setMargePct(p.chiffrage.margePct);
+      setBrod({ ...p.chiffrage.brod }); setMargePct(p.chiffrage.margePct || 40);
     }
     setEtape(0); setSousEcran("assistant");
     montrerToast("Modèle chargé — tout reste modifiable");
@@ -227,14 +327,33 @@ function NathPointBrod() {
 
   const enregistrer = () => {
     const ref = genererRef(categorie);
-    setArticles([...articles, {
-      ref, statut: "attente", photo: null, emoji: "🧵", fond: "#FDF3C7",
+    db.collection("articles").add({
+      ref, statut: "attente", photo: null, emoji: "🧵", fond: FONDS[articles.length % 2],
       nom: nomPiece || "Pièce sans nom", categorie, dims: dimsArticle || "—",
-      tissu: tissuSel?.nom || "", broderie: "", prix: Math.round(prixFinal * 10) / 10,
-      chiffrage: { tissuNom, dims, accUsage, intisseUsage, brod, charges, margePct },
-    }]);
-    montrerToast(`« ${nomPiece || "Pièce"} » pré-enregistrée — réf. ${ref}`);
-    setSousEcran("choix"); setOngletG("publier");
+      tissu: tissuSel ? tissuSel.nom : "", prix: Math.round(prixFinal * 10) / 10,
+      chiffrage: { tissuNom, dims, accUsage, intisseUsage, brod, margePct }, cree: Date.now(),
+    }).then(() => {
+      montrerToast("« " + (nomPiece || "Pièce") + " » pré-enregistrée — réf. " + ref);
+      setSousEcran("choix"); setOngletG("publier");
+    }).catch((e) => montrerToast("Erreur : " + e.message));
+  };
+
+  const ajouterPhoto = (article, fichier) => {
+    compresserPhoto(fichier)
+      .then((base64) => db.collection("articles").doc(article.id).update({ photo: base64 }))
+      .catch((e) => montrerToast("Photo : " + e.message));
+  };
+
+  const publier = (article) => {
+    db.collection("articles").doc(article.id).update({ statut: "publié", datePub: Date.now() })
+      .then(() => montrerToast(article.ref + " publié — visible en boutique"))
+      .catch((e) => montrerToast("Erreur : " + e.message));
+  };
+
+  const vendre = (article, canal) => {
+    db.collection("articles").doc(article.id).update({ statut: "vendu", canal })
+      .then(() => { setCanalPour(null); montrerToast(article.ref + " vendu (" + canal.toLowerCase() + ")"); })
+      .catch((e) => montrerToast("Erreur : " + e.message));
   };
 
   const confirmerResa = () => {
@@ -242,12 +361,42 @@ function NathPointBrod() {
       setErreur("Merci de remplir nom, prénom, téléphone et email."); return;
     }
     if (!form.retrait) { setErreur("Choisissez un lieu de retrait."); return; }
+    setEnvoiEnCours(true);
+    const artDoc = db.collection("articles").doc(resaPour.id);
+    const resDoc = db.collection("reservations").doc();
     const quand = Date.now();
-    setArticles(articles.map((a) => (a.ref === resaPour.ref ? { ...a, statut: "réservé" } : a)));
-    setReservations([{ article: resaPour, ...form, quand }, ...reservations]);
-    setConfirmation({ ...resaPour, quand });
-    setResaPour(null); setFiche(null); setErreur("");
-    setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+    db.runTransaction((t) => t.get(artDoc).then((s) => {
+      if (!s.exists || s.data().statut !== "publié") throw new Error("Cette pièce vient d" + "'" + "être réservée par quelqu" + "'" + "un d" + "'" + "autre.");
+      t.update(artDoc, { statut: "réservé" });
+      t.set(resDoc, {
+        articleId: resaPour.id, articleRef: resaPour.ref, articleNom: resaPour.nom, prix: resaPour.prix,
+        nomF: form.nomF.trim(), prenom: form.prenom.trim(), tel: form.tel.trim(), email: form.email.trim(),
+        nlOk: form.nlOk, retrait: form.retrait, quand, dateLimite: quand + DUREE_RESA_JOURS * 86400000,
+      });
+    })).then(() => {
+      setConfirmation({ ...resaPour, quand });
+      setResaPour(null); setFiche(null); setErreur("");
+      setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+    }).catch((e) => setErreur(e.message))
+      .finally(() => setEnvoiEnCours(false));
+  };
+
+  const traiterResa = (r, remise) => {
+    const lot = db.batch();
+    if (r.articleId) {
+      lot.update(db.collection("articles").doc(r.articleId),
+        remise ? { statut: "vendu", canal: "Réservation" } : { statut: "publié" });
+    }
+    lot.delete(db.collection("reservations").doc(r.id));
+    lot.commit()
+      .then(() => montrerToast(remise ? "Pièce remise — vente enregistrée" : "Réservation annulée — pièce de retour en boutique"))
+      .catch((e) => montrerToast("Erreur : " + e.message));
+  };
+
+  const seConnecter = () => {
+    setAuthErreur("");
+    auth.signInWithEmailAndPassword(authForm.email.trim(), authForm.mdp)
+      .catch(() => setAuthErreur("Email ou mot de passe incorrect."));
   };
 
   const publies = articles.filter((a) => a.statut === "publié" || a.statut === "réservé");
@@ -262,32 +411,29 @@ function NathPointBrod() {
     <div className="app">
       <style>{CSS}</style>
 
-      {/* L'espace gestion n'a aucun bouton visible : il s'ouvre uniquement
-          via l'adresse secrète  …/#atelier  (à mettre en favori) */}
-
-      {/* ================= CODE D'ACCÈS ================= */}
-      {vue === "pin" && (
+      {/* ================= CONNEXION ATELIER ================= */}
+      {enAtelier && !utilisateur && (
         <main className="contenu pin-ecran">
           <Logo petit />
-          <p className="aide" style={{ textAlign: "center", marginTop: 18 }}>
-            Espace réservé à l’atelier.<br />Entrez votre code (démo : 1234).
-          </p>
-          <input className="champ pin-champ" type="password" inputMode="numeric" maxLength={4} value={pin}
-            onChange={(e) => {
-              const v = e.target.value; setPin(v); setPinErreur(false);
-              if (v.length === 4) {
-                if (v === "1234") { setVue("gestion"); setPin(""); }
-                else { setPinErreur(true); setPin(""); }
-              }
-            }} />
-          {pinErreur && <div className="erreur" style={{ textAlign: "center" }}>Code incorrect.</div>}
+          <p className="aide" style={{ textAlign: "center", marginTop: 18 }}>Espace réservé à l’atelier.</p>
+          <div style={{ maxWidth: 320, margin: "0 auto", textAlign: "left" }}>
+            <label className="label">Email</label>
+            <input className="champ" type="email" inputMode="email" autoFocus value={authForm.email}
+              onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} />
+            <label className="label">Mot de passe</label>
+            <input className="champ" type="password" value={authForm.mdp}
+              onChange={(e) => setAuthForm({ ...authForm, mdp: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && seConnecter()} />
+            {authErreur && <div className="erreur">{authErreur}</div>}
+            <button className="btn-principal" onClick={seConnecter}>Se connecter</button>
+          </div>
           <button className="retour-lien" style={{ display: "block", margin: "18px auto 0" }}
-            onClick={() => { window.location.hash = ""; setVue("boutique"); }}>← Retour à la boutique</button>
+            onClick={() => { window.location.hash = ""; }}>← Retour à la boutique</button>
         </main>
       )}
 
       {/* ================= BOUTIQUE ================= */}
-      {vue === "boutique" && (
+      {!enAtelier && (
         <>
           <header className="entete"><Logo /></header>
           <div className="bandeau">
@@ -314,7 +460,8 @@ function NathPointBrod() {
           </div>
 
           <main className="grille">
-            {visibles.length === 0 && (
+            {chargement && <div className="vide-msg" style={{ gridColumn: "1 / -1" }}>Chargement de la boutique…</div>}
+            {!chargement && visibles.length === 0 && (
               <div className="vide-msg" style={{ gridColumn: "1 / -1" }}>
                 Les créations arrivent bientôt dans la boutique ☺<br />
                 Retrouvez-nous en attendant sur les marchés et en magasin à Belley.
@@ -323,7 +470,7 @@ function NathPointBrod() {
             {visibles.map((a) => {
               const prise = a.statut === "réservé";
               return (
-                <article key={a.ref} className={"carte" + (prise ? " prise" : "")} onClick={() => !prise && setFiche(a)}>
+                <article key={a.id} className={"carte" + (prise ? " prise" : "")} onClick={() => !prise && setFiche(a)}>
                   <div className="photo" style={{ background: a.fond }}>
                     {a.photo ? <img src={a.photo} alt="" className="photo-img" /> : <span>{a.emoji}</span>}
                     {prise && <div className="ruban">Réservée ☺</div>}
@@ -349,18 +496,25 @@ function NathPointBrod() {
       )}
 
       {/* ================= GESTION ================= */}
-      {vue === "gestion" && (
+      {enAtelier && utilisateur && (
         <>
-          <header className="entete"><Logo petit /></header>
+          <header className="entete">
+            <Logo petit />
+            <div className="barre-session">
+              <span>{utilisateur.email}</span>
+              <button className="retour-lien" onClick={() => window.location.hash = ""}>Voir la boutique</button>
+              <button className="retour-lien" onClick={() => auth.signOut()}>Se déconnecter</button>
+            </div>
+          </header>
           <div className="onglets-g">
-            {[["creer", "✂️ Créer"], ["publier", `📸 Publier${enAttente.length ? ` (${enAttente.length})` : ""}`],
-              ["resa", `🎀 Résa (${reservations.length})`], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
+            {[["creer", "✂️ Créer"], ["publier", "📸 Publier" + (enAttente.length ? " (" + enAttente.length + ")" : "")],
+              ["resa", "🎀 Résa (" + reservations.length + ")"], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
               <button key={id} className={"onglet-g" + (ongletG === id ? " actif" : "")}
                 onClick={() => { setOngletG(id); setSousEcran("choix"); }}>{titre}</button>
             ))}
           </div>
 
-          {/* ------ CRÉER : choix / modèles / assistant ------ */}
+          {/* ------ CRÉER ------ */}
           {ongletG === "creer" && sousEcran === "choix" && (
             <main className="contenu">
               <button className="grand-choix" onClick={nouvellePiece}>
@@ -384,7 +538,7 @@ function NathPointBrod() {
                   <section key={cat}>
                     <h3 className="titre-section">{cat}</h3>
                     {articles.filter((a) => a.chiffrage && a.categorie === cat).map((p) => (
-                      <button key={p.ref} className="modele-ligne" onClick={() => chargerPiece(p)}>
+                      <button key={p.id} className="modele-ligne" onClick={() => chargerPiece(p)}>
                         <span>{p.nom} · {eur(p.prix)}</span><span className="modele-fleche">›</span>
                       </button>
                     ))}
@@ -405,7 +559,6 @@ function NathPointBrod() {
                 ))}
               </div>
 
-              {/* Étape 0 : pièce, catégorie, dimensions affichées */}
               {etape === 0 && (
                 <section>
                   <Champ label="Titre de la pièce (avec couleurs du biais et de la broderie)"
@@ -426,14 +579,15 @@ function NathPointBrod() {
                         onChange={(e) => setFormCat(e.target.value)} />
                       <button className="btn-principal petit" onClick={() => {
                         if (!formCat.trim()) return;
-                        setCategories([...categories, formCat.trim()]); setCategorie(formCat.trim()); setFormCat(null);
+                        const next = [...categories, formCat.trim()];
+                        setCategories(next); persister("categories", next);
+                        setCategorie(formCat.trim()); setFormCat(null);
                       }}>Ajouter</button>
                     </div>
                   )}
                 </section>
               )}
 
-              {/* Étape 1 : tissu */}
               {etape === 1 && (
                 <section>
                   <label className="label">Tissu utilisé</label>
@@ -455,7 +609,8 @@ function NathPointBrod() {
                       </div>
                       <button className="btn-principal petit" onClick={() => {
                         if (!formTissu.nom.trim() || !formTissu.prixMetre) return;
-                        setTissusRef([...tissusRef, { ...formTissu, nom: formTissu.nom.trim() }]);
+                        const next = [...tissusRef, { ...formTissu, nom: formTissu.nom.trim() }];
+                        setTissusRef(next); persister("tissus", next);
                         setTissuNom(formTissu.nom.trim()); setFormTissu(null);
                       }}>Ajouter le tissu</button>
                     </div>
@@ -474,7 +629,6 @@ function NathPointBrod() {
                 </section>
               )}
 
-              {/* Étape 2 : accessoires */}
               {etape === 2 && (
                 <section>
                   <p className="aide">À la pièce : quantité. Au mètre : centimètres utilisés.</p>
@@ -485,7 +639,7 @@ function NathPointBrod() {
                       <div key={a.nom} className={"acc-ligne" + (actif ? " actif" : "")}>
                         <button className="acc-nom" onClick={() => setAccUsage({ ...accUsage, [a.nom]: actif ? 0 : a.mode === "piece" ? 1 : 20 })}>
                           <span className="acc-coche">{actif ? "✓" : ""}</span>
-                          <span>{a.nom}<small className="acc-detail">{a.mode === "piece" ? `${eur(a.prix)} / pièce` : `${eur(a.prix)} / m · larg. ${a.largeur} cm`}</small></span>
+                          <span>{a.nom}<small className="acc-detail">{a.mode === "piece" ? eur(a.prix) + " / pièce" : eur(a.prix) + " / m · larg. " + a.largeur + " cm"}</small></span>
                         </button>
                         {actif && (a.mode === "piece" ? (
                           <Stepper valeur={q} onChange={(v) => setAccUsage({ ...accUsage, [a.nom]: v })} />
@@ -518,7 +672,8 @@ function NathPointBrod() {
                       </div>
                       <button className="btn-principal petit" onClick={() => {
                         if (!formAcc.nom.trim() || !formAcc.prix) return;
-                        setAccRef([...accRef, { ...formAcc, nom: formAcc.nom.trim() }]); setFormAcc(null);
+                        const next = [...accRef, { ...formAcc, nom: formAcc.nom.trim() }];
+                        setAccRef(next); persister("accessoires", next); setFormAcc(null);
                       }}>Ajouter l'accessoire</button>
                     </div>
                   )}
@@ -526,7 +681,6 @@ function NathPointBrod() {
                 </section>
               )}
 
-              {/* Étape 3 : broderie */}
               {etape === 3 && (
                 <section>
                   <label className="label">Fil de broderie (bobine utilisée)</label>
@@ -537,11 +691,16 @@ function NathPointBrod() {
                     ))}
                   </div>
                   <div className="deux-cols">
-                    <Champ label={`Prix ${bobineSel?.nom || "bobine"}`} suffixe="€" type="number" inputMode="decimal" step="0.10"
-                      value={bobineSel?.prix ?? ""} onChange={(e) =>
-                        setBobinesRef(bobinesRef.map((b) => b.nom === brod.bobine ? { ...b, prix: +e.target.value } : b))} />
+                    <Champ label={"Prix " + (bobineSel ? bobineSel.nom : "bobine")} suffixe="€" type="number" inputMode="decimal" step="0.10"
+                      value={bobineSel ? bobineSel.prix : ""} onChange={(e) => {
+                        const next = bobinesRef.map((b) => b.nom === brod.bobine ? { ...b, prix: +e.target.value } : b);
+                        setBobinesRef(next); persister("bobines", next);
+                      }} />
                     <Champ label="Prix canette (5000 m)" suffixe="€" type="number" inputMode="decimal" step="0.10"
-                      value={canette.prix} onChange={(e) => setCanette({ ...canette, prix: +e.target.value })} />
+                      value={canette.prix} onChange={(e) => {
+                        const next = { ...canette, prix: +e.target.value };
+                        setCanette(next); persister("canette", next);
+                      }} />
                   </div>
                   <div className="deux-cols">
                     <Champ label="Nombre de points" type="number" inputMode="numeric" value={brod.points}
@@ -595,7 +754,8 @@ function NathPointBrod() {
                       </div>
                       <button className="btn-principal petit" onClick={() => {
                         if (!formIntisse.nom.trim() || !formIntisse.prixMetre) return;
-                        setIntisseRef([...intisseRef, { ...formIntisse, nom: formIntisse.nom.trim() }]); setFormIntisse(null);
+                        const next = [...intisseRef, { ...formIntisse, nom: formIntisse.nom.trim() }];
+                        setIntisseRef(next); persister("intisses", next); setFormIntisse(null);
                       }}>Ajouter la matière</button>
                     </div>
                   )}
@@ -603,30 +763,31 @@ function NathPointBrod() {
                 </section>
               )}
 
-              {/* Étape 4 : charges */}
               {etape === 4 && (
                 <section>
-                  <p className="aide">Ces valeurs se règlent une fois pour toutes. L’URSSAF se calcule à l’étape Prix, sur le prix final.</p>
+                  <p className="aide">Ces valeurs se règlent une fois pour toutes — elles sont mémorisées. L’URSSAF se calcule à l’étape Prix.</p>
                   <Champ label="Temps de confection (hors broderie)" suffixe="min" type="number" inputMode="numeric"
-                    value={charges.confectionMin} onChange={(e) => setCharges({ ...charges, confectionMin: +e.target.value })} />
+                    value={charges.confectionMin} onChange={(e) => {
+                      const next = { ...charges, confectionMin: +e.target.value };
+                      setCharges(next); persister("charges", next);
+                    }} />
                   <div className="deux-cols">
                     <Champ label="Électricité" suffixe="€ / h" type="number" inputMode="decimal" step="0.05" value={charges.electricite}
-                      onChange={(e) => setCharges({ ...charges, electricite: +e.target.value })} />
+                      onChange={(e) => { const next = { ...charges, electricite: +e.target.value }; setCharges(next); persister("charges", next); }} />
                     <Champ label="Usure machine" suffixe="€ / h" type="number" inputMode="decimal" step="0.10" value={charges.usure}
-                      onChange={(e) => setCharges({ ...charges, usure: +e.target.value })} />
+                      onChange={(e) => { const next = { ...charges, usure: +e.target.value }; setCharges(next); persister("charges", next); }} />
                   </div>
                   <Champ label="Salaire" suffixe="€ / h" type="number" inputMode="decimal" value={charges.salaire}
-                    onChange={(e) => setCharges({ ...charges, salaire: +e.target.value })} />
+                    onChange={(e) => { const next = { ...charges, salaire: +e.target.value }; setCharges(next); persister("charges", next); }} />
                   <div className="info-calc">⏱ Temps total : {Math.round(minutesTotal)} min ({Math.round(minutesBroderie)} broderie + {charges.confectionMin || 0} confection)</div>
                   <div className="sous-total">Main d'œuvre + machine : <strong>{eur(coutSalaire + coutMachine)}</strong></div>
                 </section>
               )}
 
-              {/* Étape 5 : prix */}
               {etape === 5 && (
                 <section>
                   <div className="recap">
-                    <div className="recap-ligne"><span>Tissu ({tissuSel?.nom})</span><span>{eur(coutTissu)}</span></div>
+                    <div className="recap-ligne"><span>Tissu ({tissuSel ? tissuSel.nom : "—"})</span><span>{eur(coutTissu)}</span></div>
                     <div className="recap-ligne"><span>Accessoires</span><span>{eur(coutAccessoires)}</span></div>
                     <div className="recap-ligne"><span>Fil de broderie</span><span>{eur(coutFil)}</span></div>
                     <div className="recap-ligne"><span>Intissés</span><span>{eur(coutIntisses)}</span></div>
@@ -669,7 +830,7 @@ function NathPointBrod() {
                 <div className="vide-msg">Rien en attente : toutes vos pièces ont leur photo et sont publiées.</div>
               ) : (
                 enAttente.map((p) => (
-                  <div key={p.ref} className="publier-carte">
+                  <div key={p.id} className="publier-carte">
                     <div className="publier-haut">
                       {p.photo ? (
                         <img src={p.photo} alt="" className="photo-mini-img" />
@@ -678,10 +839,7 @@ function NathPointBrod() {
                           <input type="file" accept="image/*" capture="environment" className="photo-input"
                             onChange={(e) => {
                               const f = e.target.files && e.target.files[0];
-                              if (!f) return;
-                              const r = new FileReader();
-                              r.onload = () => setArticles((prev) => prev.map((x) => x.ref === p.ref ? { ...x, photo: r.result } : x));
-                              r.readAsDataURL(f);
+                              if (f) ajouterPhoto(p, f);
                             }} />
                         </label>
                       )}
@@ -692,10 +850,7 @@ function NathPointBrod() {
                       </div>
                     </div>
                     <button className={"btn-principal petit" + (p.photo ? "" : " inactif")} disabled={!p.photo}
-                      onClick={() => {
-                        setArticles(articles.map((x) => x.ref === p.ref ? { ...x, statut: "publié", datePub: Date.now() } : x));
-                        montrerToast(`${p.ref} publié — visible en boutique`);
-                      }}>
+                      onClick={() => publier(p)}>
                       {p.photo ? "Publier maintenant" : "Ajoutez la photo pour publier"}
                     </button>
                   </div>
@@ -707,18 +862,21 @@ function NathPointBrod() {
           {/* ------ RÉSERVATIONS ------ */}
           {ongletG === "resa" && (
             <main className="contenu">
-              <p className="aide">📧 Avec Brevo : confirmation automatique à la réservation + rappel 2 jours avant la fin de la semaine de mise de côté.</p>
               {reservations.length === 0 ? (
-                <div className="vide-msg">Aucune réservation. Passez côté Boutique et réservez une pièce pour voir ce que vous recevrez.</div>
+                <div className="vide-msg">Aucune réservation en cours.</div>
               ) : (
-                reservations.map((r, i) => (
-                  <div key={i} className="resa-carte">
-                    <div className="resa-article">{r.article.nom} · {eur(r.article.prix)} <span className="ref-badge">{r.article.ref}</span></div>
+                reservations.map((r) => (
+                  <div key={r.id} className="resa-carte">
+                    <div className="resa-article">{r.articleNom} · {eur(r.prix)} <span className="ref-badge">{r.articleRef}</span></div>
                     <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
                     <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
                     <div className="resa-detail">📍 Retrait : {r.retrait}</div>
-                    <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}</div>
+                    <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
                     <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
+                    <div className="resa-actions">
+                      <button className="btn-secondaire mini-btn" onClick={() => traiterResa(r, false)}>Annuler / remettre en boutique</button>
+                      <button className="btn-principal petit" onClick={() => traiterResa(r, true)}>Remise faite ✓</button>
+                    </div>
                   </div>
                 ))
               )}
@@ -743,9 +901,9 @@ function NathPointBrod() {
               </div>
               <button className="btn-principal" onClick={() => {
                 if (!nvMarche.date || !nvMarche.lieu.trim()) return;
-                setMarches([...marches, { id: Date.now(), date: nvMarche.date, lieu: nvMarche.lieu.trim() }]);
-                setNvMarche({ date: "", lieu: "" });
-                montrerToast("Marché ajouté — visible sur la boutique");
+                db.collection("marches").add({ date: nvMarche.date, lieu: nvMarche.lieu.trim() })
+                  .then(() => { setNvMarche({ date: "", lieu: "" }); montrerToast("Marché ajouté — visible sur la boutique"); })
+                  .catch((e) => montrerToast("Erreur : " + e.message));
               }}>Ajouter ce marché</button>
               {[...marches].sort((a, b) => b.date.localeCompare(a.date)).map((m) => {
                 const passe = m.date < AUJOURDHUI;
@@ -755,7 +913,7 @@ function NathPointBrod() {
                       <div className="ligne-nom">{m.lieu}</div>
                       <div className="ligne-detail">{dateFR(m.date)}{passe && " — passé, masqué de la boutique"}</div>
                     </div>
-                    <button className="btn-suppr" onClick={() => setMarches(marches.filter((x) => x.id !== m.id))}>✕</button>
+                    <button className="btn-suppr" onClick={() => db.collection("marches").doc(m.id).delete()}>✕</button>
                   </div>
                 );
               })}
@@ -780,7 +938,7 @@ function NathPointBrod() {
                       {Object.entries(compte).map(([c, n]) => <span key={c} className="chip">{c} ({n})</span>)}
                     </div>
                     {liste.map((a) => (
-                      <div key={a.ref} className="ligne">
+                      <div key={a.id} className="ligne">
                         <div className="photo-mini" style={{ background: a.fond }}>
                           {a.photo ? <img src={a.photo} alt="" className="photo-mini-img" /> : a.emoji}
                         </div>
@@ -791,18 +949,14 @@ function NathPointBrod() {
                             {a.statut === "réservé" && <span className="badge-resa"> réservé</span>}
                           </div>
                         </div>
-                        {canalPour === a.ref ? (
+                        {canalPour === a.id ? (
                           <div className="canaux">
                             {["Marché", "Magasin", "Site"].map((c) => (
-                              <button key={c} className="canal" onClick={() => {
-                                setArticles(articles.map((x) => x.ref === a.ref ? { ...x, statut: "vendu", canal: c } : x));
-                                setCanalPour(null);
-                                montrerToast(`${a.ref} vendu (${c.toLowerCase()}) — retiré de la boutique`);
-                              }}>{c}</button>
+                              <button key={c} className="canal" onClick={() => vendre(a, c)}>{c}</button>
                             ))}
                           </div>
                         ) : (
-                          <button className="btn-vendu" onClick={() => setCanalPour(a.ref)}>Vendu</button>
+                          <button className="btn-vendu" onClick={() => setCanalPour(a.id)}>Vendu</button>
                         )}
                       </div>
                     ))}
@@ -825,10 +979,9 @@ function NathPointBrod() {
             <div className="panneau-corps">
               <div className="carte-cat">{fiche.categorie}</div>
               <h2 className="panneau-nom">{fiche.nom}</h2>
-              {fiche.broderie && <p className="panneau-desc">{fiche.broderie}</p>}
               <div className="details">
                 <div className="detail-ligne"><span>Dimensions</span><span>{fiche.dims}</span></div>
-                <div className="detail-ligne"><span>Tissu</span><span>{fiche.tissu}</span></div>
+                <div className="detail-ligne"><span>Tissu</span><span>{fiche.tissu || "—"}</span></div>
                 <div className="detail-ligne"><span>Référence</span><span>{fiche.ref}</span></div>
               </div>
               <div className="panneau-pied">
@@ -846,7 +999,7 @@ function NathPointBrod() {
 
       {/* ================= FORMULAIRE RÉSERVATION ================= */}
       {resaPour && (
-        <div className="voile" onClick={() => setResaPour(null)}>
+        <div className="voile" onClick={() => !envoiEnCours && setResaPour(null)}>
           <div className="panneau" onClick={(e) => e.stopPropagation()}>
             <button className="fermer" onClick={() => setResaPour(null)}>✕</button>
             <div className="panneau-corps">
@@ -884,8 +1037,10 @@ function NathPointBrod() {
                 <span>J’accepte de recevoir la newsletter des nouveautés de Nath Point Brod (1 email par mois environ).</span>
               </label>
               {erreur && <div className="erreur">{erreur}</div>}
-              <button className="btn-principal" onClick={confirmerResa}>Confirmer la réservation</button>
-              <p className="note-resa">Aucun paiement en ligne. Vous recevrez un email de confirmation, puis un rappel avant la fin de la mise de côté.</p>
+              <button className="btn-principal" disabled={envoiEnCours} onClick={confirmerResa}>
+                {envoiEnCours ? "Réservation en cours…" : "Confirmer la réservation"}
+              </button>
+              <p className="note-resa">Aucun paiement en ligne : la pièce est simplement mise de côté pour vous.</p>
             </div>
           </div>
         </div>
@@ -899,7 +1054,7 @@ function NathPointBrod() {
             <h2 className="panneau-nom centre">C’est réservé !</h2>
             <p className="panneau-desc centre">
               Votre pièce est mise de côté jusqu’au <strong>{limiteResa(confirmation.quand)}</strong>.
-              Un email de confirmation vous est envoyé, et un petit rappel 2 jours avant la fin — votre pièce vous attend ☺
+              Nath vous recontacte pour convenir du retrait ☺
             </p>
             <button className="btn-principal" onClick={() => setConfirmation(null)}>Continuer la visite</button>
           </div>
@@ -912,7 +1067,7 @@ function NathPointBrod() {
 }
 
 /* ================================================================== */
-/*  Styles — charte Nath Point Brod                                    */
+/*  Styles — charte Nath Point Brod (inchangés + barre de session)     */
 /* ================================================================== */
 
 const CSS = `
@@ -925,10 +1080,6 @@ const CSS = `
 * { box-sizing: border-box; margin: 0; }
 .app { max-width: 430px; margin: 0 auto; min-height: 100vh; background: var(--fond); color: var(--encre); font-family: 'Poppins', -apple-system, sans-serif; font-weight: 300; padding-bottom: 24px; }
 
-.bascule { display: flex; background: var(--rose-pale); }
-.bascule button { flex: 1; border: none; background: transparent; padding: 11px; font-family: 'Poppins', sans-serif; font-size: 12.5px; color: var(--bordeaux); }
-.bascule button.actif { background: var(--bordeaux); color: #fff; font-weight: 600; }
-
 .entete { text-align: center; padding: 18px 16px 8px; }
 .logo { display: inline-block; position: relative; padding-top: 14px; }
 .logo.petit { transform: scale(0.78); padding-top: 8px; }
@@ -937,13 +1088,14 @@ const CSS = `
 .logo-brod { color: var(--bordeaux); font-weight: 700; }
 .smiley { color: var(--jaune); font-size: 26px; vertical-align: super; margin-left: 2px; }
 .logo-artisan { font-size: 9px; letter-spacing: 3px; color: var(--bordeaux); margin-top: 4px; font-weight: 400; }
+.barre-session { display: flex; gap: 14px; justify-content: center; align-items: center; font-size: 11px; color: #8B8082; margin-top: 4px; flex-wrap: wrap; }
 
 .bandeau { margin: 10px 14px; font-size: 12.5px; line-height: 1.55; background: var(--rose-pale); border-radius: 14px; padding: 12px 16px; text-align: center; }
 .marches-bloc { margin: 0 14px 6px; background: var(--carte); border: 2px solid var(--jaune); border-radius: 14px; padding: 12px 16px; }
 .marches-titre { font-size: 12px; font-weight: 600; color: var(--bordeaux); margin-bottom: 6px; }
-.marche-ligne { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; }
+.marche-ligne { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; gap: 10px; }
 .marche-date { text-transform: capitalize; }
-.marche-lieu { font-weight: 600; color: var(--bordeaux); }
+.marche-lieu { font-weight: 600; color: var(--bordeaux); text-align: right; }
 
 .chips { display: flex; gap: 8px; overflow-x: auto; padding: 8px 14px 12px; -webkit-overflow-scrolling: touch; }
 .chip { flex: 0 0 auto; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-family: 'Poppins', sans-serif; }
@@ -967,7 +1119,6 @@ const CSS = `
 .pied { text-align: center; font-size: 11.5px; color: #8B8082; padding: 26px 20px 8px; line-height: 1.7; }
 
 .pin-ecran { text-align: center; padding-top: 40px; }
-.pin-champ { max-width: 140px; margin: 14px auto 0; text-align: center; font-size: 24px; letter-spacing: 10px; }
 
 .onglets-g { display: flex; gap: 6px; padding: 8px 12px 4px; overflow-x: auto; }
 .onglet-g { flex: 0 0 auto; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 999px; padding: 9px 12px; font-size: 12px; font-family: 'Poppins', sans-serif; }
@@ -975,7 +1126,7 @@ const CSS = `
 .contenu { padding: 12px 14px 24px; }
 .aide { font-size: 12px; color: #8B8082; margin-bottom: 12px; line-height: 1.5; }
 .vide-msg { text-align: center; color: #8B8082; font-size: 13px; padding: 34px 20px; border: 2px dashed var(--rose); border-radius: 14px; line-height: 1.6; }
-.retour-lien { border: none; background: none; color: var(--bordeaux); font-size: 14px; padding: 6px 0 12px; }
+.retour-lien { border: none; background: none; color: var(--bordeaux); font-size: 13px; padding: 6px 0; font-family: 'Poppins', sans-serif; }
 .titre-section { font-size: 13px; font-weight: 600; color: var(--bordeaux); margin: 12px 0 8px; }
 
 .grand-choix { display: block; width: 100%; text-align: left; background: var(--carte); border: 2px solid var(--jaune); border-radius: 16px; padding: 18px; margin-bottom: 14px; color: var(--encre); font-family: 'Poppins', sans-serif; }
@@ -1034,8 +1185,9 @@ const CSS = `
 
 .btn-principal { width: 100%; margin-top: 16px; background: var(--bordeaux); color: #fff; border: none; border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 600; font-family: 'Poppins', sans-serif; }
 .btn-principal.petit { width: auto; margin: 0; padding: 12px 18px; font-size: 13px; }
-.btn-principal.inactif { opacity: 0.45; }
+.btn-principal.inactif, .btn-principal:disabled { opacity: 0.45; }
 .btn-secondaire { background: transparent; border: 1.5px solid var(--rose); color: var(--encre); border-radius: 12px; padding: 12px 18px; font-size: 13.5px; font-family: 'Poppins', sans-serif; }
+.mini-btn { padding: 9px 12px; font-size: 12px; }
 .nav-bas { display: flex; justify-content: space-between; margin-top: 22px; }
 
 .publier-carte { background: var(--carte); border: 2px solid var(--jaune); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
@@ -1061,6 +1213,7 @@ const CSS = `
 .resa-article { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
 .resa-client { font-size: 13px; font-weight: 600; color: var(--bordeaux); }
 .resa-detail { font-size: 12px; color: #6E6366; margin-top: 2px; }
+.resa-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
 .voile { position: fixed; inset: 0; background: rgba(58,50,52,0.5); display: flex; align-items: flex-end; justify-content: center; z-index: 30; }
 .panneau { background: var(--fond); border-radius: 18px 18px 0 0; width: 100%; max-width: 430px; max-height: 90vh; overflow-y: auto; position: relative; }
@@ -1085,6 +1238,7 @@ const CSS = `
 .case input { width: 18px; height: 18px; accent-color: var(--bordeaux); flex: 0 0 18px; margin-top: 1px; }
 .erreur { margin-top: 12px; background: #FDECEC; color: var(--bordeaux); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px; z-index: 40; white-space: nowrap; }
+
 @media (min-width: 700px) {
   .app { max-width: 1080px; }
   .grille { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 0 24px; }
@@ -1095,10 +1249,8 @@ const CSS = `
   .panneau { border-radius: 18px; max-width: 480px; }
   .photo.grande { max-height: 380px; }
 }
-
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `;
-
 
 ReactDOM.createRoot(document.getElementById("racine")).render(<NathPointBrod />);
 
