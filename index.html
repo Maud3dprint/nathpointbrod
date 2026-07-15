@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v11-edition-cadrage" />
+  <meta name="version" content="v13-templates" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
@@ -56,6 +56,7 @@ const auth = firebase.auth();
 
 const VITESSE_BRODERIE = 600;
 const DUREE_RESA_JOURS = 7;
+const SERVICE_MAILS = "https://REMPLACE-MOI.vercel.app"; // adresse du projet Vercel d'envoi d'emails
 const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
 
 const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",") + " €";
@@ -118,7 +119,276 @@ const compresserPhoto = (fichier) => new Promise((resoudre, rejeter) => {
 });
 const tailleKo = (base64) => Math.round(((base64 && base64.length) || 0) * 0.75 / 1024);
 
+/* ================================================================== */
+/*  MOTEUR DE TEMPLATES (posts réseaux + newsletter)                   */
+/* ================================================================== */
+
+const PALETTES_TPL = [
+  { nom: "jaune", bandeau: "#FDF3C7", photos: ["#FDF3C7", "#FFEFF4"] },
+  { nom: "rose", bandeau: "#FFEFF4", photos: ["#FFE3EB", "#FDF3C7"] },
+  { nom: "sapin", bandeau: "#EAF0E4", photos: ["#EAF0E4", "#FDF3C7"] },
+  { nom: "bleu", bandeau: "#E9EEF4", photos: ["#E9EEF4", "#FFEFF4"] },
+  { nom: "pêche", bandeau: "#FBEADB", photos: ["#FBEADB", "#FDF3C7"] },
+  { nom: "crème", bandeau: "#FFF7EC", photos: ["#FDF3C7", "#FFE3EB"] },
+];
+const GABARITS_TPL = ["g1", "g2", "g3", "g4"];
+const POSITIONS_TPL = ["bas", "haut", "superpose"];
+const NB_PHOTOS_TPL = { g1: 1, g2: 2, g3: 3, g4: 4, tambour: 1 };
+const auHasard = (t) => t[Math.floor(Math.random() * t.length)];
+
+const OCCASIONS = [
+  { id: "noel", nom: "Noël", emoji: "🎄", emojis: ["🎄", "🧦", "🎁", "⛄", "⭐"], titres: [
+    { h: "Noël approche…", p: "Pièces brodées uniques — commandez avant le 10 décembre !", cta: "Commandes ouvertes 🎄" },
+    { h: "Le Noël fait-main", p: "Cette année, glissez du fait-main sous le sapin.", cta: "Je commande 🎁" },
+    { h: "Idées cadeaux de Noël", p: "Uniques, personnalisées, brodées ici à l'atelier.", cta: "Voir la boutique ☺" }]},
+  { id: "voeux", nom: "Vœux", emoji: "✨", emojis: ["✨", "🥂", "🧵", "🎊"], titres: [
+    { h: "Belle année à tous !", p: "Merci pour cette année à vos côtés — vos pièces préférées en mosaïque.", cta: "" },
+    { h: "Bonne année ☺", p: "L'atelier repart de plus belle : plein de nouveautés arrivent.", cta: "À très vite" },
+    { h: "Merci pour cette année", p: "Que la nouvelle année vous soit douce comme un fil de coton.", cta: "" }]},
+  { id: "valentin", nom: "St-Valentin", emoji: "❤️", emojis: ["💌", "❤️", "💘"], titres: [
+    { h: "Dites-le avec du fil", p: "Un prénom, une date, un petit mot brodé — le cadeau qui ne fane jamais.", cta: "Je commande 💌" },
+    { h: "Brodé avec amour", p: "Pour la Saint-Valentin, offrez une pièce unique, comme votre histoire.", cta: "Idées cadeaux ❤️" },
+    { h: "L'amour se brode", p: "Coussin, pochette ou petit mot brodé : à chacun sa déclaration.", cta: "" }]},
+  { id: "mamies", nom: "Fête des grands-mères", emoji: "💐", emojis: ["🍳", "🧺", "🌷", "💐"], titres: [
+    { h: "Bonne fête Mamie", p: "« La cuisine de Mamie » et autres douceurs brodées à offrir.", cta: "Idées cadeaux mamie" },
+    { h: "Pour les mamies en or", p: "Un torchon, un coussin, un tablier brodé à son prénom.", cta: "Je gâte ma mamie 💐" },
+    { h: "Merci Mamie ☺", p: "Le petit brodé qui lui fera monter les larmes (de joie).", cta: "" }]},
+  { id: "paques", nom: "Pâques", emoji: "🐣", emojis: ["🐣", "🧺", "🥚", "🐰"], titres: [
+    { h: "Joyeuses Pâques", p: "Paniers de chasse aux œufs brodés au prénom — fini les disputes de chocolats.", cta: "Je personnalise 🐰" },
+    { h: "La chasse est ouverte !", p: "Chaque enfant son panier brodé, chaque chocolat son propriétaire.", cta: "Paniers de Pâques" },
+    { h: "Pâques se prépare", p: "Petits paniers et douceurs brodées pour le jour J.", cta: "" }]},
+  { id: "meres", nom: "Fête des mères", emoji: "🌸", emojis: ["🌸", "👝", "💕"], titres: [
+    { h: "Bonne fête Maman", p: "Une pièce brodée rien que pour elle — unique, comme elle.", cta: "Idées fête des mères" },
+    { h: "Pour les mamans", p: "Trousse, coussin ou pochette brodée : le cadeau fait-main qui touche.", cta: "J'offre du fait-main 🌸" },
+    { h: "Merci Maman ☺", p: "Commandez à temps pour le dernier dimanche de mai !", cta: "" }]},
+  { id: "peres", nom: "Fête des pères", emoji: "🧢", emojis: ["🧢", "🛠️", "👔"], titres: [
+    { h: "Bonne fête Papa", p: "Tablier de barbecue, trousse à outils brodée à son nom…", cta: "Idées pour les papas" },
+    { h: "Pour les papas", p: "Le cadeau qu'il ne rangera pas au fond du placard.", cta: "Je commande 🧢" },
+    { h: "Merci Papa ☺", p: "Un brodé personnalisé, à son prénom ou son surnom.", cta: "" }]},
+  { id: "papis", nom: "Fête des grands-pères", emoji: "🎩", emojis: ["🌰", "🎩", "🍂"], titres: [
+    { h: "Bonne fête Papi", p: "« Le potager de Papi » — un petit brodé qui dit un grand merci.", cta: "Idées cadeaux papi" },
+    { h: "Pour les papis en or", p: "Tablier, casquette ou trousse brodée à son prénom.", cta: "Je gâte mon papi ☺" },
+    { h: "Merci Papi ☺", p: "Le cadeau fait-main qui lui ressemble.", cta: "" }]},
+  { id: "naissance", nom: "Naissance", emoji: "🎀", emojis: ["🍼", "🧸", "🛁", "👶"], titres: [
+    { h: "Bienvenue petit bout", p: "Brodé au prénom et à la date de naissance — le cadeau qu'on garde toute la vie.", cta: "Cadeau de naissance 🎀" },
+    { h: "Un bébé arrive ?", p: "Cape de bain, doudou, bavoir brodés : le cadeau de naissance parfait.", cta: "Je découvre 🍼" },
+    { h: "Pour les tout-petits", p: "Douceurs brodées, prénom et date : un souvenir pour la vie.", cta: "" }]},
+  { id: "anniversaire", nom: "Anniversaire", emoji: "🎂", emojis: ["🎂", "🎁", "🎈"], titres: [
+    { h: "Joyeux anniversaire !", p: "Un cadeau brodé à son prénom : introuvable en magasin, inoubliable.", cta: "J'offre du fait-main 🎁" },
+    { h: "Un anniversaire arrive ?", p: "Offrez une pièce unique, brodée et personnalisée.", cta: "Idées cadeaux 🎂" },
+    { h: "Le cadeau qui marque", p: "Personnalisé, fait-main, et à son prénom.", cta: "" }]},
+  { id: "mariage", nom: "Mariage", emoji: "💍", emojis: ["💍", "🕊️", "💐"], titres: [
+    { h: "Vive les mariés !", p: "Coussin d'alliances, linge brodé à leurs initiales et à leur date.", cta: "Cadeau de mariage 💍" },
+    { h: "Un mariage en vue ?", p: "Le cadeau brodé et personnalisé qu'aucune liste ne propose.", cta: "Je commande ☺" },
+    { h: "Brodé pour la vie", p: "Leurs prénoms, leur date : un souvenir cousu main.", cta: "" }]},
+  { id: "rentree", nom: "Rentrée", emoji: "✏️", emojis: ["🎒", "👝", "🧦", "🧢"], titres: [
+    { h: "C'est la rentrée !", p: "Tout brodé au prénom : fini les affaires perdues à l'école.", cta: "Je prépare la rentrée ✏️" },
+    { h: "En route pour l'école", p: "Serviettes de cantine, sacs et trousses brodés au prénom.", cta: "Voir les indispensables" },
+    { h: "Rentrée sans perte ☺", p: "Un prénom brodé, et les affaires reviennent à la maison.", cta: "" }]},
+  { id: "marche", nom: "Marché à venir", emoji: "☀️", emojis: ["🧺", "🍼", "👜"], titres: [
+    { h: "Retrouvez-nous au marché !", p: "[date] — [lieu]. Un aperçu de ce que j'apporte ☺", cta: "On s'y retrouve ☀️" },
+    { h: "L'atelier sort ses tréteaux", p: "Rendez-vous [date] au [lieu] — venez toucher les tissus !", cta: "" },
+    { h: "À [lieu] ce [date] !", p: "Les pièces en vrai, les tissus à toucher, et moi pour en discuter ☺", cta: "" }]},
+  { id: "printemps", nom: "Printemps", emoji: "🌸", emojis: ["🌸", "🐝", "🌱"], titres: [
+    { h: "Collection printemps", p: "Fleurs brodées, tissus légers, couleurs douces.", cta: "Voir les nouveautés 🌸" },
+    { h: "Le printemps est là", p: "Nouvelles couleurs et petits motifs fleuris à l'atelier.", cta: "" },
+    { h: "Ça bourgeonne à l'atelier", p: "Les tissus de saison sont arrivés — et ils sont doux.", cta: "Je découvre" }]},
+  { id: "ete", nom: "Été", emoji: "☀️", emojis: ["🏖️", "👜", "🌊"], titres: [
+    { h: "L'été à l'atelier", p: "Sacs de plage et capes de bain brodés au prénom.", cta: "Collection été 🏖" },
+    { h: "Prêts pour la plage ?", p: "Serviettes et sacs brodés — les vacances se préparent ici.", cta: "" },
+    { h: "L'été se brode", p: "Couleurs vives et coton léger pour la belle saison.", cta: "Je découvre ☀️" }]},
+  { id: "automne", nom: "Automne", emoji: "🍂", emojis: ["🍂", "🌰", "🍄"], titres: [
+    { h: "Douceurs d'automne", p: "Teintes chaudes et petits motifs de saison.", cta: "Voir la collection 🍂" },
+    { h: "L'automne est arrivé", p: "Éponge moelleuse et couleurs feuille-morte à l'atelier.", cta: "" },
+    { h: "Ça sent l'automne", p: "Champignons, écureuils et feuilles brodées de saison.", cta: "Je découvre" }]},
+  { id: "hiver", nom: "Hiver", emoji: "❄️", emojis: ["❄️", "🧣", "☕"], titres: [
+    { h: "Cocooning d'hiver", p: "Plaids et coussins brodés pour rester au chaud.", cta: "Collection hiver ❄️" },
+    { h: "L'hiver au coin du fil", p: "Douceurs brodées et tissus tout doux pour la saison froide.", cta: "" },
+    { h: "Bien au chaud ☺", p: "Flocons, tasses fumantes et petites laines brodées.", cta: "Je découvre" }]},
+  { id: "broderie", nom: "Broderie de la semaine", emoji: "🧵", tambour: true, emojis: ["🦊", "🌻", "🐻", "🌸"], titres: [
+    { h: "La broderie de la semaine", p: "Ce motif vous plaît ? Il se brode sur le support de votre choix.", cta: "Je choisis mon support 🧵" },
+    { h: "Le motif du moment", p: "Bavoir, tote bag, torchon, trousse… vous choisissez le support !", cta: "Sur commande ☺" },
+    { h: "Coup de cœur de l'atelier", p: "Une broderie, mille possibilités : dites-moi votre support préféré.", cta: "" }]},
+  { id: "support", nom: "Motif + support au choix", emoji: "🪡", tambour: true, emojis: ["🌻", "🦋", "🍓"], titres: [
+    { h: "Vous choisissez le support", p: "Bavoir · tote bag · torchon · trousse · serviette…", cta: "Je choisis 🧵" },
+    { h: "Un motif, votre support", p: "La broderie s'invite où vous voulez — dites-moi tout.", cta: "Sur commande" },
+    { h: "À votre idée ☺", p: "Ce motif brodé sur le support de votre choix, à votre prénom si vous voulez.", cta: "" }]},
+  { id: "avantapres", nom: "Du motif à la pièce", emoji: "✂️", emojis: ["🧵", "🍼"], g2: true, titres: [
+    { h: "Du motif… à la pièce finie", p: "À gauche la broderie, à droite sur son support : voilà comment naît une commande ☺", cta: "Sur commande 🧵" },
+    { h: "Avant / après", p: "Le motif seul, puis brodé sur sa pièce — la magie de la personnalisation.", cta: "" },
+    { h: "Comment naît une pièce", p: "Vous choisissez le motif et le support, je brode le reste ☺", cta: "Je commande" }]},
+  { id: "nouveautes", nom: "Nouveautés", emoji: "🧺", emojis: ["🧺", "🍼", "👜", "🍳"], titres: [
+    { h: "Les nouveautés de l'atelier", p: "Fraîchement sorties de la machine — toutes uniques, toutes brodées ici.", cta: "Voir la boutique ☺" },
+    { h: "Ça vient de sortir !", p: "Les dernières pièces brodées viennent d'arriver en boutique.", cta: "Je découvre 🧵" },
+    { h: "Nouveau à l'atelier", p: "De nouvelles pièces uniques vous attendent.", cta: "" }]},
+];
+
+const chargerImage = (src) => new Promise((res, rej) => {
+  const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
+});
+
+const arrondiCanvas = (ctx, x, y, w, h, r) => {
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+};
+
+const ecrireCentre = (ctx, texte, x, y, maxL, interligne) => {
+  const mots = (texte || "").split(" ");
+  let ligne = "", yy = y;
+  mots.forEach((m) => {
+    const t = ligne ? ligne + " " + m : m;
+    if (ctx.measureText(t).width > maxL && ligne) { ctx.fillText(ligne, x, yy); yy += interligne; ligne = m; }
+    else ligne = t;
+  });
+  if (ligne) { ctx.fillText(ligne, x, yy); yy += interligne; }
+  return yy;
+};
+
+async function dessinerPost(v, photosSrc, textes) {
+  await document.fonts.load("700 80px Caveat");
+  await document.fonts.load("300 30px Poppins");
+  await document.fonts.load("600 28px Poppins");
+  const T = 1080, hB = 300;
+  const c = document.createElement("canvas");
+  c.width = T; c.height = T;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#FFFDF8"; ctx.fillRect(0, 0, T, T);
+
+  const superpose = v.position === "superpose";
+  const photosY = v.position === "haut" ? hB : 0;
+  const zone = superpose
+    ? { x: 0, y: 0, w: T, h: T, r: 0 }
+    : { x: 14, y: photosY + 14, w: T - 28, h: T - hB - 28, r: 18 };
+
+  const imgs = [];
+  for (const s of photosSrc) imgs.push(s ? await chargerImage(s) : null);
+  const teintes = v.palette.photos;
+
+  const casePhoto = (x, y, w, h, i) => {
+    ctx.save();
+    arrondiCanvas(ctx, x, y, w, h, zone.r); ctx.clip();
+    const img = imgs[i];
+    if (img) {
+      const k = Math.max(w / img.width, h / img.height);
+      ctx.drawImage(img, x + (w - img.width * k) / 2, y + (h - img.height * k) / 2, img.width * k, img.height * k);
+    } else {
+      ctx.fillStyle = teintes[i % 2]; ctx.fillRect(x, y, w, h);
+      ctx.font = Math.round(Math.min(w, h) * 0.32) + "px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(v.emojis[i % v.emojis.length], x + w / 2, y + h / 2);
+      ctx.textBaseline = "alphabetic";
+    }
+    ctx.restore();
+  };
+
+  const g = 14;
+  if (v.gabarit === "tambour") {
+    const cx = T / 2, cy = zone.y + zone.h / 2, R = Math.min(zone.h, 640) / 2 - 30;
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
+    const img = imgs[0];
+    if (img) {
+      const k = Math.max((2 * R) / img.width, (2 * R) / img.height);
+      ctx.drawImage(img, cx - img.width * k / 2, cy - img.height * k / 2, img.width * k, img.height * k);
+    } else {
+      ctx.fillStyle = teintes[0]; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+      ctx.font = "180px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(v.emojis[0], cx, cy); ctx.textBaseline = "alphabetic";
+    }
+    ctx.restore();
+    ctx.lineWidth = 26; ctx.strokeStyle = "#C89B6A";
+    ctx.beginPath(); ctx.arc(cx, cy, R + 14, 0, 7); ctx.stroke();
+    ctx.lineWidth = 7; ctx.strokeStyle = "#B0824F";
+    ctx.beginPath(); ctx.arc(cx, cy, R - 2, 0, 7); ctx.stroke();
+    ctx.fillStyle = "#B0824F"; ctx.fillRect(cx - 15, cy - R - 56, 30, 34);
+  } else if (v.gabarit === "g1") {
+    casePhoto(zone.x, zone.y, zone.w, zone.h, 0);
+  } else if (v.gabarit === "g2") {
+    const w = (zone.w - g) / 2;
+    casePhoto(zone.x, zone.y, w, zone.h, 0); casePhoto(zone.x + w + g, zone.y, w, zone.h, 1);
+  } else if (v.gabarit === "g3") {
+    const w1 = (zone.w - g) * 2 / 3, w2 = zone.w - g - w1, h2 = (zone.h - g) / 2;
+    casePhoto(zone.x, zone.y, w1, zone.h, 0);
+    casePhoto(zone.x + w1 + g, zone.y, w2, h2, 1);
+    casePhoto(zone.x + w1 + g, zone.y + h2 + g, w2, h2, 2);
+  } else {
+    const w = (zone.w - g) / 2, h = (zone.h - g) / 2;
+    casePhoto(zone.x, zone.y, w, h, 0); casePhoto(zone.x + w + g, zone.y, w, h, 1);
+    casePhoto(zone.x, zone.y + h + g, w, h, 2); casePhoto(zone.x + w + g, zone.y + h + g, w, h, 3);
+  }
+
+  const bandY = v.position === "haut" && !superpose ? 0 : T - hB;
+  ctx.fillStyle = superpose ? "rgba(255,253,248,0.93)" : v.palette.bandeau;
+  ctx.fillRect(0, bandY, T, hB);
+
+  ctx.textAlign = "center";
+  let ty = bandY + 88;
+  ctx.fillStyle = "#6D071A"; ctx.font = "700 74px Caveat";
+  ctx.fillText(v.emoji + " " + (textes.h || ""), T / 2, ty);
+  ctx.font = "300 30px Poppins"; ctx.fillStyle = "#5E5257";
+  ty = ecrireCentre(ctx, textes.p, T / 2, ty + 50, 880, 40);
+  if (textes.cta) {
+    ctx.font = "600 28px Poppins";
+    const w = ctx.measureText(textes.cta).width + 60;
+    arrondiCanvas(ctx, T / 2 - w / 2, ty - 12, w, 58, 29);
+    ctx.fillStyle = "#6D071A"; ctx.fill();
+    ctx.fillStyle = "#FFFFFF"; ctx.fillText(textes.cta, T / 2, ty + 26);
+  }
+
+  if (v.pointille) {
+    ctx.strokeStyle = "rgba(109,7,26,0.4)"; ctx.lineWidth = 3;
+    ctx.setLineDash([13, 11]); ctx.strokeRect(24, 24, T - 48, T - 48); ctx.setLineDash([]);
+  }
+
+  ctx.textAlign = "left";
+  ctx.font = "700 46px Caveat";
+  let wPil = ctx.measureText("Nath Point Brod ☺").width + 44;
+  arrondiCanvas(ctx, 26, 26, wPil, 66, 33);
+  ctx.fillStyle = "rgba(255,253,248,0.93)"; ctx.fill();
+  ctx.fillStyle = "#6D071A"; ctx.fillText("Nath Point Brod ", 48, 72);
+  ctx.fillStyle = "#E3C400"; ctx.fillText("☺", 48 + ctx.measureText("Nath Point Brod ").width, 72);
+  ctx.fillStyle = "#6D071A"; ctx.font = "600 19px Poppins";
+  const sousTxt = "B R O D E R I E   P E R S O N N A L I S É E";
+  wPil = ctx.measureText(sousTxt).width + 36;
+  arrondiCanvas(ctx, 26, 102, wPil, 36, 18);
+  ctx.fillStyle = "rgba(255,253,248,0.9)"; ctx.fill();
+  ctx.fillStyle = "#6D071A"; ctx.fillText(sousTxt, 44, 127);
+  ctx.textAlign = "center";
+
+  return c.toDataURL("image/png");
+}
+
 /* ------------------------------------------------------------------ */
+
+function ApercuPost({ v, photos, textes, grand }) {
+  const nb = NB_PHOTOS_TPL[v.gabarit];
+  const cases = [];
+  for (let i = 0; i < nb; i++) {
+    const src = photos && photos[i];
+    cases.push(
+      <div key={i} className="tpl-ph" style={src ? {} : { background: v.palette.photos[i % 2] }}>
+        {src ? <img src={src} alt="" /> : <span>{v.emojis[i % v.emojis.length]}</span>}
+      </div>
+    );
+  }
+  const zone = v.gabarit === "tambour"
+    ? <div className="tpl-tambour-wrap"><div className="tpl-tambour">{cases}</div></div>
+    : <div className={"tpl-photos " + v.gabarit}>{cases}</div>;
+  const bandeau = (
+    <div className="tpl-bandeau" style={{ background: v.position === "superpose" ? "rgba(255,253,248,0.93)" : v.palette.bandeau }}>
+      <h3>{v.emoji} {textes.h}</h3>
+      <p>{textes.p}</p>
+      {textes.cta ? <span className="tpl-cta">{textes.cta}</span> : null}
+    </div>
+  );
+  return (
+    <div className={"tpl-post " + v.position + (v.pointille ? " pointille" : "") + (grand ? " grand" : "")}>
+      <div className="tpl-logo">Nath Point Brod<em>☺</em></div>
+      <div className="tpl-souslogo">BRODERIE PERSONNALISÉE</div>
+      {v.position === "haut" ? <>{bandeau}{zone}</> : <>{zone}{bandeau}</>}
+    </div>
+  );
+}
 
 function Logo({ petit }) {
   return (
@@ -202,6 +472,14 @@ function NathPointBrod() {
     );
   }, [utilisateur]);
 
+  useEffect(() => {
+    if (!utilisateur) { setContacts([]); return; }
+    return db.collection("contacts").onSnapshot(
+      (s) => setContacts(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (e) => console.error("Lecture contacts : " + e.message)
+    );
+  }, [utilisateur]);
+
   /* ---------- réglages (référentiels) ---------- */
   const [categories, setCategories] = useState(CONFIG_DEFAUT.categories);
   const [tissusRef, setTissusRef] = useState(CONFIG_DEFAUT.tissus);
@@ -273,6 +551,17 @@ function NathPointBrod() {
   const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
   const [recherche, setRecherche] = useState("");
   const [canalPour, setCanalPour] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [nlTitre, setNlTitre] = useState("Les nouveautés du mois");
+  const [nlMessage, setNlMessage] = useState("Bonjour ! Voici quelques pièces sorties de l’atelier récemment — toutes brodées ici, toutes uniques. Un coup de cœur ? Elles sont à retrouver sur la boutique.");
+  const [nlSel, setNlSel] = useState(null); // null = sélection par défaut (30 derniers jours)
+  const [sousNews, setSousNews] = useState("post"); // "post" | "nl"
+  const [nvOcc, setNvOcc] = useState(null);
+  const [nvVariantes, setNvVariantes] = useState([]);
+  const [nvChoix, setNvChoix] = useState(null);
+  const [nvTextes, setNvTextes] = useState({ h: "", p: "", cta: "" });
+  const [nvPhotos, setNvPhotos] = useState([]);
+  const [generationEnCours, setGenerationEnCours] = useState(false);
 
   /* ---------- pièce en cours ---------- */
   const [nomPiece, setNomPiece] = useState("");
@@ -395,6 +684,14 @@ function NathPointBrod() {
     img.src = src;
   };
 
+  const ouvrirRecadrageLocal = (slot, fichier) => {
+    const src = URL.createObjectURL(fichier);
+    const img = new Image();
+    img.onload = () => setRecadrage({ slot, src, w: img.width, h: img.height, zoom: 1, x: null, y: null });
+    img.onerror = () => { URL.revokeObjectURL(src); montrerToast("Photo illisible"); };
+    img.src = src;
+  };
+
   const validerRecadrage = (entiere) => {
     const r = recadrage;
     const img = new Image();
@@ -419,7 +716,15 @@ function NathPointBrod() {
       let sortie = c.toDataURL("image/jpeg", 0.68);
       if (sortie.length > 350000) sortie = c.toDataURL("image/jpeg", 0.5);
       URL.revokeObjectURL(r.src);
-      ajouterPhotoBase64(r.articleId, sortie);
+      if (r.articleId) {
+        ajouterPhotoBase64(r.articleId, sortie);
+      } else {
+        setNvPhotos((prev) => {
+          const next = [...prev];
+          next[r.slot] = sortie;
+          return next;
+        });
+      }
       setRecadrage(null);
     };
     img.src = r.src;
@@ -462,6 +767,19 @@ function NathPointBrod() {
         nlOk: form.nlOk, retrait: form.retrait, quand, dateLimite: quand + DUREE_RESA_JOURS * 86400000,
       });
     })).then(() => {
+      if (form.nlOk) {
+        const idContact = form.email.trim().toLowerCase().replace(/[\/#?\[\]]/g, "_");
+        db.collection("contacts").doc(idContact)
+          .set({ email: form.email.trim().toLowerCase(), prenom: form.prenom.trim(), quand })
+          .catch(() => {}); // adresse déjà connue : rien à faire
+      }
+      if (!SERVICE_MAILS.includes("REMPLACE")) {
+        fetch(SERVICE_MAILS + "/api/reservation", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: resDoc.id }),
+        }).catch(() => {}); // l'email est un bonus : son échec ne bloque jamais la réservation
+      }
       setConfirmation({ ...resaPour, quand });
       setResaPour(null); setFiche(null); setErreur("");
       setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
@@ -485,6 +803,102 @@ function NathPointBrod() {
     setAuthErreur("");
     auth.signInWithEmailAndPassword(authForm.email.trim(), authForm.mdp)
       .catch(() => setAuthErreur("Email ou mot de passe incorrect."));
+  };
+
+  /* ---------- générateur de posts & newsletter ---------- */
+  const tirerVariantes = (occ) => {
+    const prochain = marchesAVenir[0];
+    const remplacer = (s) => s
+      .replace(/\[date\]/g, prochain ? dateFR(prochain.date) : "dimanche prochain")
+      .replace(/\[lieu\]/g, prochain ? prochain.lieu : "au marché");
+    const arr = [];
+    for (let i = 0; i < 12; i++) {
+      const t = auHasard(occ.titres);
+      const gab = occ.tambour ? (Math.random() < 0.6 ? "tambour" : auHasard(GABARITS_TPL))
+        : occ.g2 ? "g2" : auHasard(GABARITS_TPL);
+      arr.push({
+        gabarit: gab, palette: auHasard(PALETTES_TPL),
+        position: gab === "tambour" ? "bas" : auHasard(POSITIONS_TPL),
+        pointille: Math.random() < 0.35,
+        emoji: occ.emoji, emojis: occ.emojis,
+        titre: { h: remplacer(t.h), p: remplacer(t.p), cta: t.cta },
+      });
+    }
+    return arr;
+  };
+
+  const ouvrirOccasion = (occ) => { setNvOcc(occ); setNvChoix(null); setNvVariantes(tirerVariantes(occ)); };
+  const choisirVariante = (v) => {
+    setNvChoix(v); setNvTextes({ ...v.titre });
+    setNvPhotos(new Array(NB_PHOTOS_TPL[v.gabarit]).fill(null));
+  };
+  const telechargerPost = async () => {
+    setGenerationEnCours(true);
+    try {
+      const url = await dessinerPost(nvChoix, nvPhotos, nvTextes);
+      const a = document.createElement("a");
+      a.href = url; a.download = "nathpointbrod-" + nvOcc.id + ".png"; a.click();
+      montrerToast("Image téléchargée — prête pour les réseaux ☺");
+    } catch (e) { montrerToast("Erreur : " + e.message); }
+    finally { setGenerationEnCours(false); }
+  };
+
+  const piecesNewsletter = articles
+    .filter((a) => (a.statut === "publié" || a.statut === "réservé") && a.photo)
+    .sort((a, b) => (b.datePub || 0) - (a.datePub || 0));
+  const selectionNl = nlSel || (() => {
+    const defaut = {};
+    piecesNewsletter.slice(0, 6).forEach((p) => { defaut[p.id] = true; });
+    return defaut;
+  })();
+
+  const genererNlHTML = () => {
+    const pieces = piecesNewsletter.filter((p) => selectionNl[p.id]);
+    const cartes = pieces.map((p) =>
+      '<td width="50%" style="padding:6px"><div style="background:#FFFDF8;border-radius:10px;overflow:hidden;text-align:center">' +
+      '<img src="' + p.photo + '" width="100%" style="display:block" alt="" />' +
+      '<div style="font:600 13px Arial;color:#3A3234;padding:8px 6px 2px">' + p.nom + "</div>" +
+      '<div style="font:600 13px Arial;color:#6D071A;padding-bottom:10px">' + eur(p.prix) + "</div></div></td>"
+    );
+    let lignes = "";
+    for (let i = 0; i < cartes.length; i += 2) {
+      lignes += "<tr>" + cartes[i] + (cartes[i + 1] || "<td></td>") + "</tr>";
+    }
+    return '<div style="max-width:560px;margin:0 auto;background:#fff;font-family:Arial,sans-serif;color:#3A3234">' +
+      '<div style="text-align:center;padding:18px 10px;border-bottom:2px dashed #6D071A">' +
+      '<div style="font-size:26px;font-weight:bold;color:#6D071A">Nath Point Brod <span style="color:#F3D617">&#9786;</span></div>' +
+      '<div style="font-size:10px;letter-spacing:3px;color:#6D071A">BRODERIE PERSONNALIS&Eacute;E</div></div>' +
+      '<h2 style="text-align:center;color:#6D071A;font-size:22px;margin:16px 10px 6px">' + nlTitre + "</h2>" +
+      '<p style="text-align:center;font-size:13px;line-height:1.6;color:#5E5257;margin:0 24px 12px">' + nlMessage + "</p>" +
+      '<table width="100%" cellpadding="0" cellspacing="0">' + lignes + "</table>" +
+      '<div style="text-align:center;margin:16px"><a href="' + window.location.origin + window.location.pathname +
+      '" style="background:#6D071A;color:#fff;text-decoration:none;font:600 13px Arial;border-radius:999px;padding:10px 22px;display:inline-block">Voir toutes les cr&eacute;ations sur la boutique</a></div>' +
+      '<p style="text-align:center;font-size:10px;color:#A09A8C;padding-bottom:16px">Vous recevez cet email car vous avez accept&eacute; la newsletter de Nath Point Brod. Pour vous d&eacute;sinscrire, r&eacute;pondez simplement &laquo;&nbsp;stop&nbsp;&raquo;.</p></div>';
+  };
+
+  const telechargerNl = () => {
+    const blob = new Blob(["<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#F2EEE6;padding:14px'>" + genererNlHTML() + "</body></html>"], { type: "text/html" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "newsletter-nathpointbrod.html"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    montrerToast("Newsletter téléchargée (.html)");
+  };
+
+  const copierNewsletter = async () => {
+    const html = genererNlHTML();
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([nlTitre + "\n\n" + nlMessage], { type: "text/plain" }),
+      })]);
+      montrerToast("Newsletter copiée — collez-la dans un nouvel email ☺");
+    } catch (e) { telechargerNl(); }
+  };
+
+  const copierAdresses = () => {
+    navigator.clipboard.writeText(contacts.map((c) => c.email).join(", "))
+      .then(() => montrerToast(contacts.length + " adresse(s) copiée(s) — à coller en Cci"))
+      .catch(() => montrerToast("Copie impossible sur ce navigateur"));
   };
 
   const publies = articles.filter((a) => a.statut === "publié" || a.statut === "réservé");
@@ -597,7 +1011,7 @@ function NathPointBrod() {
           </header>
           <div className="onglets-g">
             {[["creer", "✂️ Créer"], ["publier", "📸 Publier" + (enAttente.length ? " (" + enAttente.length + ")" : "")],
-              ["resa", "🎀 Résa (" + reservations.length + ")"], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
+              ["resa", "🎀 Résa (" + reservations.length + ")"], ["news", "💌 News"], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
               <button key={id} className={"onglet-g" + (ongletG === id ? " actif" : "")}
                 onClick={() => { setOngletG(id); setSousEcran("choix"); }}>{titre}</button>
             ))}
@@ -1053,6 +1467,114 @@ function NathPointBrod() {
                     </div>
                   </div>
                 ))
+              )}
+            </main>
+          )}
+
+          {/* ------ NEWS : POSTS & NEWSLETTER ------ */}
+          {ongletG === "news" && (
+            <main className="contenu">
+              <div className="chips" style={{ padding: "0 0 10px" }}>
+                <button className={"chip" + (sousNews === "post" ? " actif" : "")} onClick={() => setSousNews("post")}>🖼 Post réseaux</button>
+                <button className={"chip" + (sousNews === "nl" ? " actif" : "")} onClick={() => setSousNews("nl")}>💌 Newsletter</button>
+              </div>
+
+              {sousNews === "post" && !nvOcc && (
+                <>
+                  <p className="aide">Choisissez l’occasion : des dizaines de modèles à vos couleurs vous seront proposés, texte déjà écrit.</p>
+                  <div className="choix-grille">
+                    {OCCASIONS.map((o) => (
+                      <button key={o.id} className="choix-case" onClick={() => ouvrirOccasion(o)}>{o.emoji} {o.nom}</button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {sousNews === "post" && nvOcc && !nvChoix && (
+                <>
+                  <div className="nav-bas" style={{ margin: "0 0 12px" }}>
+                    <button className="btn-secondaire mini-btn" onClick={() => setNvOcc(null)}>← Occasions</button>
+                    <button className="btn-principal petit" onClick={() => setNvVariantes(tirerVariantes(nvOcc))}>🎲 Autres modèles</button>
+                  </div>
+                  <p className="aide">{nvOcc.emoji} {nvOcc.nom} — touchez le modèle qui vous plaît :</p>
+                  <div className="tpl-grille">
+                    {nvVariantes.map((v, i) => (
+                      <button key={i} className="tpl-choix" onClick={() => choisirVariante(v)}>
+                        <ApercuPost v={v} photos={[]} textes={v.titre} />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {sousNews === "post" && nvOcc && nvChoix && (
+                <>
+                  <div className="nav-bas" style={{ margin: "0 0 12px" }}>
+                    <button className="btn-secondaire mini-btn" onClick={() => setNvChoix(null)}>← Autres modèles</button>
+                  </div>
+                  <div className="tpl-editeur">
+                    <ApercuPost v={nvChoix} photos={nvPhotos} textes={nvTextes} grand />
+                  </div>
+                  <label className="label">Vos photos ({NB_PHOTOS_TPL[nvChoix.gabarit]} emplacement{NB_PHOTOS_TPL[nvChoix.gabarit] > 1 ? "s" : ""})</label>
+                  <div className="photos-rangee">
+                    {nvPhotos.map((ph, i) => ph ? (
+                      <div key={i} className="photo-vignette">
+                        <img src={ph} alt="" />
+                        <button className="photo-retirer" onClick={() => setNvPhotos(nvPhotos.map((x, j) => j === i ? null : x))}>✕</button>
+                      </div>
+                    ) : (
+                      <label key={i} className="photo-bouton">📷 {i + 1}
+                        <input type="file" accept="image/*" className="photo-input"
+                          onChange={(e) => {
+                            const f = e.target.files && e.target.files[0];
+                            if (f) ouvrirRecadrageLocal(i, f);
+                            e.target.value = "";
+                          }} />
+                      </label>
+                    ))}
+                  </div>
+                  <Champ label="Titre" value={nvTextes.h} onChange={(e) => setNvTextes({ ...nvTextes, h: e.target.value })} />
+                  <div className="champ-bloc">
+                    <label className="label">Texte</label>
+                    <textarea className="champ" rows="2" value={nvTextes.p}
+                      onChange={(e) => setNvTextes({ ...nvTextes, p: e.target.value })} />
+                  </div>
+                  <Champ label="Pastille (laisser vide pour aucune)" value={nvTextes.cta}
+                    onChange={(e) => setNvTextes({ ...nvTextes, cta: e.target.value })} />
+                  <button className="btn-principal" disabled={generationEnCours} onClick={telechargerPost}>
+                    {generationEnCours ? "Préparation de l’image…" : "⬇️ Télécharger l’image (pour Facebook / Instagram)"}
+                  </button>
+                  <p className="note-resa">Image carrée 1080 × 1080 : publiez-la comme n’importe quelle photo.</p>
+                </>
+              )}
+
+              {sousNews === "nl" && (
+                <>
+                  <p className="aide">La newsletter se remplit avec les pièces de la boutique. Modifiez le texte, cochez les pièces, puis copiez-la dans un email.</p>
+                  <Champ label="Titre" value={nlTitre} onChange={(e) => setNlTitre(e.target.value)} />
+                  <div className="champ-bloc">
+                    <label className="label">Message d’introduction</label>
+                    <textarea className="champ" rows="3" value={nlMessage} onChange={(e) => setNlMessage(e.target.value)} />
+                  </div>
+                  <label className="label">Pièces à montrer ({piecesNewsletter.filter((p) => selectionNl[p.id]).length} choisies)</label>
+                  {piecesNewsletter.length === 0 && <div className="vide-msg">Publiez d’abord des pièces avec photo : elles apparaîtront ici.</div>}
+                  {piecesNewsletter.map((p) => (
+                    <button key={p.id} className={"acc-ligne" + (selectionNl[p.id] ? " actif" : "")} style={{ width: "100%" }}
+                      onClick={() => setNlSel({ ...selectionNl, [p.id]: !selectionNl[p.id] })}>
+                      <span className="acc-nom">
+                        <span className="acc-coche">{selectionNl[p.id] ? "✓" : ""}</span>
+                        <img src={p.photo} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover" }} />
+                        <span>{p.nom}<small className="acc-detail">{eur(p.prix)}</small></span>
+                      </span>
+                    </button>
+                  ))}
+                  <button className="btn-principal" onClick={copierNewsletter}>📋 Copier la newsletter (à coller dans un email)</button>
+                  <div className="resa-actions" style={{ justifyContent: "space-between", marginTop: 10 }}>
+                    <button className="btn-secondaire mini-btn" onClick={copierAdresses}>👥 Copier les adresses ({contacts.length})</button>
+                    <button className="btn-secondaire mini-btn" onClick={telechargerNl}>⬇️ Télécharger (.html)</button>
+                  </div>
+                  <p className="note-resa">Dans votre boîte mail : nouveau message → collez la newsletter → collez les adresses en <strong>Cci</strong> (jamais en À, pour protéger les emails de vos clientes) → envoyez quand vous voulez ☺</p>
+                </>
               )}
             </main>
           )}
@@ -1575,6 +2097,46 @@ const CSS = `
 .fiche-vignettes img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
 .fiche-vignettes img.choisi { border-color: var(--bordeaux); }
 .btn-edit { border: none; background: none; color: var(--bordeaux); font-size: 16px; padding: 6px; }
+
+/* --- templates réseaux --- */
+.tpl-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.tpl-choix { border: none; background: none; padding: 0; text-align: inherit; }
+.tpl-post { aspect-ratio: 1; width: 100%; background: var(--fond); border-radius: 5px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 2px 8px rgba(58,50,52,0.14); position: relative; }
+.tpl-post.pointille::before { content: ""; position: absolute; inset: 5px; border: 1.5px dashed var(--bordeaux); opacity: .4; border-radius: 3px; pointer-events: none; z-index: 3; }
+.tpl-logo { position: absolute; top: 4px; left: 5px; z-index: 2; font-family: 'Caveat', cursive; font-size: 11px; color: var(--bordeaux); font-weight: 700; background: rgba(255,253,248,0.9); border-radius: 999px; padding: 1px 7px; }
+.tpl-logo em { color: var(--jaune); font-style: normal; }
+.tpl-souslogo { position: absolute; top: 19px; left: 7px; z-index: 2; font-size: 5px; letter-spacing: 1px; color: var(--bordeaux); background: rgba(255,253,248,0.85); border-radius: 999px; padding: 1px 5px; }
+.tpl-photos { flex: 1; display: grid; gap: 3px; padding: 4px 4px 0; min-height: 0; }
+.tpl-post.haut .tpl-photos { padding: 0 4px 4px; }
+.tpl-photos.g1 { grid-template-columns: 1fr; }
+.tpl-photos.g2 { grid-template-columns: 1fr 1fr; }
+.tpl-photos.g3 { grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; }
+.tpl-photos.g3 .tpl-ph:first-child { grid-row: 1 / 3; }
+.tpl-photos.g4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tpl-ph { border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 24px; min-height: 0; overflow: hidden; }
+.tpl-photos.g4 .tpl-ph, .tpl-photos.g3 .tpl-ph:not(:first-child) { font-size: 15px; }
+.tpl-ph img { width: 100%; height: 100%; object-fit: cover; }
+.tpl-tambour-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding-top: 7px; min-height: 0; }
+.tpl-tambour { width: 54%; aspect-ratio: 1; border-radius: 50%; border: 5px solid #C89B6A; position: relative; display: flex; background: #fff; box-shadow: inset 0 0 0 2px #B0824F; overflow: hidden; }
+.tpl-tambour::after { content: "▮"; position: absolute; top: -3px; left: 50%; transform: translateX(-50%); color: #B0824F; font-size: 9px; }
+.tpl-tambour .tpl-ph { width: 100%; height: 100%; border-radius: 0; font-size: 34px; }
+.tpl-bandeau { padding: 5px 7px 6px; text-align: center; }
+.tpl-bandeau h3 { font-family: 'Caveat', cursive; font-size: 13px; color: var(--bordeaux); line-height: 1; }
+.tpl-bandeau p { font-size: 6px; color: #5E5257; line-height: 1.35; margin-top: 1px; }
+.tpl-cta { display: inline-block; margin-top: 2px; background: var(--bordeaux); color: #fff; font-size: 5.5px; font-weight: 600; border-radius: 999px; padding: 2px 6px; }
+.tpl-post.superpose .tpl-bandeau { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; }
+.tpl-post.superpose .tpl-photos { position: absolute; inset: 0; padding: 0; }
+.tpl-post.superpose .tpl-ph { border-radius: 0; }
+.tpl-editeur { max-width: 340px; margin: 0 auto 6px; }
+.tpl-post.grand .tpl-logo { font-size: 17px; padding: 2px 10px; top: 8px; left: 9px; }
+.tpl-post.grand .tpl-souslogo { font-size: 7px; top: 32px; left: 11px; }
+.tpl-post.grand .tpl-bandeau { padding: 10px 12px 12px; }
+.tpl-post.grand .tpl-bandeau h3 { font-size: 25px; }
+.tpl-post.grand .tpl-bandeau p { font-size: 10.5px; }
+.tpl-post.grand .tpl-cta { font-size: 9.5px; padding: 4px 11px; margin-top: 4px; }
+.tpl-post.grand .tpl-ph { font-size: 42px; }
+.tpl-post.grand .tpl-photos.g4 .tpl-ph, .tpl-post.grand .tpl-photos.g3 .tpl-ph:not(:first-child) { font-size: 26px; }
+textarea.champ { resize: vertical; font-family: 'Poppins', sans-serif; }
 .recadrage-zone {
   width: 300px; height: 300px; position: relative; overflow: hidden; border-radius: 12px;
   margin: 0 auto; background: #EDE8E9; touch-action: none; cursor: grab;
