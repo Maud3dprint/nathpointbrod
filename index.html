@@ -7,31 +7,36 @@
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
-  <!-- Versions figées + CDN jsDelivr (plus fiable que les redirections unpkg) -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
   <script>
-    // Affiche toute erreur à l'écran au lieu d'une page blanche
+    // --- Filet de sécurité : toute erreur s'affiche sur la page ---
     function afficherErreur(msg) {
       var b = document.createElement("div");
-      b.style.cssText = "position:fixed;top:0;left:0;right:0;background:#6D071A;color:#fff;padding:14px;font:13px/1.5 sans-serif;z-index:9999;white-space:pre-wrap";
-      b.textContent = "Erreur de chargement — envoyez ce message à Sam :\n" + msg;
-      document.body.appendChild(b);
+      b.style.cssText = "position:fixed;top:0;left:0;right:0;background:#6D071A;color:#fff;padding:14px;font:13px/1.5 sans-serif;z-index:9999;white-space:pre-wrap;max-height:60vh;overflow:auto";
+      b.textContent = "Erreur — envoyez ce message à Sam :\n" + msg;
+      (document.body || document.documentElement).appendChild(b);
     }
     window.addEventListener("error", function (e) { afficherErreur(e.message + (e.filename ? "\n" + e.filename + " ligne " + e.lineno : "")); });
     window.addEventListener("unhandledrejection", function (e) { afficherErreur(String(e.reason)); });
+    var _ce = console.error.bind(console);
+    console.error = function () { _ce.apply(null, arguments); try { afficherErreur([].slice.call(arguments).map(String).join(" ")); } catch (x) {} };
     window.addEventListener("DOMContentLoaded", function () {
-      if (typeof React === "undefined") afficherErreur("React n'a pas pu être chargé (connexion au CDN bloquée ?)");
-      else if (typeof Babel === "undefined") afficherErreur("Babel n'a pas pu être chargé (connexion au CDN bloquée ?)");
+      if (typeof React === "undefined") afficherErreur("React n'a pas pu etre charge (CDN bloque ?)");
+      else if (typeof Babel === "undefined") afficherErreur("Babel n'a pas pu etre charge (CDN bloque ?)");
+      else setTimeout(function () {
+        var r = document.getElementById("racine");
+        if (r && r.childNodes.length === 0) afficherErreur("La page ne s'est pas construite (aucune erreur signalee). Version du fichier : v3.");
+      }, 4000);
     });
   </script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
 </head>
 <body>
   <noscript>Cette boutique nécessite JavaScript pour fonctionner.</noscript>
   <div id="racine"></div>
   <script type="text/babel" data-presets="react">
-const { useState } = React;
+const { useState, useEffect } = React;
 
 /* ================================================================== */
 /*  NATH POINT BROD — démo complète                                    */
@@ -48,13 +53,7 @@ const AUJOURDHUI = new Date().toISOString().slice(0, 10);
 const dateFR = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 const limiteResa = (ts) => new Date(ts + DUREE_RESA_JOURS * 86400000).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
-const ARTICLES_INIT = [
-  { ref: "BEB-001", nom: "Bavoir éponge blanc, biais terracotta & broderie bordeaux", categorie: "Bébé & Bain", tissu: "Éponge blanche", broderie: "Prénom + petite fleur", dims: "28 × 40 cm", prix: 22.9, emoji: "🍼", fond: "#FDF3C7", statut: "publié" },
-  { ref: "BEB-002", nom: "Cape de bain écrue, biais vert sauge & broderie caramel", categorie: "Bébé & Bain", tissu: "Éponge écrue", broderie: "Ourson endormi + prénom", dims: "75 × 75 cm", prix: 39.9, emoji: "🛁", fond: "#FFE3EB", statut: "publié" },
-  { ref: "NAI-001", nom: "Doudou gaze rose, biais blanc & broderie bordeaux", categorie: "Naissance", tissu: "Gaze de coton rose", broderie: "Prénom + date de naissance", dims: "30 × 30 cm", prix: 26.9, emoji: "🧸", fond: "#FFE3EB", statut: "publié" },
-  { ref: "POC-001", nom: "Trousse en jean, biais moutarde & broderie blanche", categorie: "Pochettes & Sacs", tissu: "Jean", broderie: "Initiales entrelacées", dims: "22 × 14 cm", prix: 21.9, emoji: "👝", fond: "#FDF3C7", statut: "publié" },
-  { ref: "CUI-001", nom: "Torchon écru, biais bordeaux & broderie bordeaux", categorie: "Cuisine", tissu: "Coton écru", broderie: "« La cuisine de Mamie »", dims: "50 × 70 cm", prix: 14.9, emoji: "🍳", fond: "#FFE3EB", statut: "publié" },
-];
+const ARTICLES_INIT = []; // la boutique démarre vide : les pièces créées et publiées dans la gestion apparaîtront ici
 
 /* ------------------------------------------------------------------ */
 
@@ -97,7 +96,12 @@ function Stepper({ valeur, onChange }) {
 /* ================================================================== */
 
 function NathPointBrod() {
-  const [vue, setVue] = useState("boutique");           // boutique | pin | gestion
+  const [vue, setVue] = useState(window.location.hash === "#atelier" ? "pin" : "boutique"); // gestion accessible uniquement via l'adresse secrète /#atelier
+  useEffect(() => {
+    const surChangement = () => setVue(window.location.hash === "#atelier" ? "pin" : "boutique");
+    window.addEventListener("hashchange", surChangement);
+    return () => window.removeEventListener("hashchange", surChangement);
+  }, []);
   const [pin, setPin] = useState("");
   const [pinErreur, setPinErreur] = useState(false);
   const [toast, setToast] = useState(null);
@@ -105,11 +109,7 @@ function NathPointBrod() {
 
   /* ---------- données partagées ---------- */
   const [articles, setArticles] = useState(ARTICLES_INIT);
-  const [marches, setMarches] = useState([
-    { id: 1, date: dansJours(-3), lieu: "Marché de Belley" },
-    { id: 2, date: dansJours(4), lieu: "Marché de Belley" },
-    { id: 3, date: dansJours(11), lieu: "Marché d'Artemare" },
-  ]);
+  const [marches, setMarches] = useState([]);
   const [reservations, setReservations] = useState([]);
 
   /* ---------- boutique ---------- */
@@ -122,11 +122,7 @@ function NathPointBrod() {
 
   /* ---------- gestion : référentiels du chiffrage ---------- */
   const [categories, setCategories] = useState(["Bébé & Bain", "Naissance", "Pochettes & Sacs", "Cuisine", "Maison"]);
-  const [tissusRef, setTissusRef] = useState([
-    { nom: "Éponge blanche", prixMetre: 12, laize: 140 },
-    { nom: "Coton imprimé", prixMetre: 10, laize: 140 },
-    { nom: "Gaze de coton", prixMetre: 11, laize: 130 },
-  ]);
+  const [tissusRef, setTissusRef] = useState([]); // elle ajoute ses tissus avec « + Nouveau tissu »
   const [accRef, setAccRef] = useState([
     { nom: "Élastique", mode: "metre", prix: 1.2, largeur: 2 },
     { nom: "Boucle", mode: "piece", prix: 0.5 },
@@ -160,7 +156,7 @@ function NathPointBrod() {
   const [nomPiece, setNomPiece] = useState("");
   const [categorie, setCategorie] = useState("Bébé & Bain");
   const [dimsArticle, setDimsArticle] = useState("");
-  const [tissuNom, setTissuNom] = useState("Éponge blanche");
+  const [tissuNom, setTissuNom] = useState("");
   const [dims, setDims] = useState({ largeur: 40, hauteur: 26 });
   const [accUsage, setAccUsage] = useState({});
   const [brod, setBrod] = useState({ bobine: "Bobine 1000 m", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
@@ -265,14 +261,8 @@ function NathPointBrod() {
     <div className="app">
       <style>{CSS}</style>
 
-      {/* Bascule visible uniquement dans la démo : en vrai, la gestion
-          est sur une adresse séparée que les clientes ne voient jamais */}
-      <div className="bascule">
-        <button className={vue === "boutique" ? "actif" : ""} onClick={() => setVue("boutique")}>Boutique (clientes)</button>
-        <button className={vue !== "boutique" ? "actif" : ""} onClick={() => setVue(vue === "gestion" ? "gestion" : "pin")}>
-          🔒 Espace gestion
-        </button>
-      </div>
+      {/* L'espace gestion n'a aucun bouton visible : il s'ouvre uniquement
+          via l'adresse secrète  …/#atelier  (à mettre en favori) */}
 
       {/* ================= CODE D'ACCÈS ================= */}
       {vue === "pin" && (
@@ -290,6 +280,8 @@ function NathPointBrod() {
               }
             }} />
           {pinErreur && <div className="erreur" style={{ textAlign: "center" }}>Code incorrect.</div>}
+          <button className="retour-lien" style={{ display: "block", margin: "18px auto 0" }}
+            onClick={() => { window.location.hash = ""; setVue("boutique"); }}>← Retour à la boutique</button>
         </main>
       )}
 
@@ -321,6 +313,12 @@ function NathPointBrod() {
           </div>
 
           <main className="grille">
+            {visibles.length === 0 && (
+              <div className="vide-msg" style={{ gridColumn: "1 / -1" }}>
+                Les créations arrivent bientôt dans la boutique ☺<br />
+                Retrouvez-nous en attendant sur les marchés et en magasin à Belley.
+              </div>
+            )}
             {visibles.map((a) => {
               const prise = a.statut === "réservé";
               return (
@@ -1086,6 +1084,17 @@ const CSS = `
 .case input { width: 18px; height: 18px; accent-color: var(--bordeaux); flex: 0 0 18px; margin-top: 1px; }
 .erreur { margin-top: 12px; background: #FDECEC; color: var(--bordeaux); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px; z-index: 40; white-space: nowrap; }
+@media (min-width: 700px) {
+  .app { max-width: 1080px; }
+  .grille { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 0 24px; }
+  .bandeau, .marches-bloc { margin-left: 24px; margin-right: 24px; }
+  .chips { padding-left: 24px; padding-right: 24px; }
+  .contenu, .onglets-g { max-width: 620px; margin-left: auto; margin-right: auto; }
+  .voile { align-items: center; }
+  .panneau { border-radius: 18px; max-width: 480px; }
+  .photo.grande { max-height: 380px; }
+}
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `;
 
