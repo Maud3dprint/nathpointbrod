@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v8-suppression" />
+  <meta name="version" content="v10-photos-listes" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
@@ -76,7 +76,7 @@ const CONFIG_DEFAUT = {
     { nom: "Bouton", mode: "piece", prix: 0.25 },
     { nom: "Fil (hors broderie)", mode: "piece", prix: 0.2 },
     { nom: "Biais", mode: "metre", prix: 1.6, largeur: 2 },
-    { nom: "Fermeture éclair", mode: "piece", prix: 1.2 },
+    { nom: "Fermeture éclair", mode: "metre", prix: 1.2, largeur: 3 },
   ],
   intisses: [
     { nom: "Soluble", prixMetre: 6.0, laize: 30 },
@@ -93,25 +93,30 @@ const CONFIG_DEFAUT = {
   urssafPct: 13,
 };
 
-/* Compression photo -> base64 (~150-300 Ko) stockée avec l'article */
+/* Compression photo : carré 900×900, image ENTIÈRE centrée sur fond blanc
+   (jamais coupée ni zoomée), ~80-250 Ko, stockée avec l'article */
 const compresserPhoto = (fichier) => new Promise((resoudre, rejeter) => {
   const img = new Image();
   const url = URL.createObjectURL(fichier);
   img.onload = () => {
-    const max = 900;
-    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const cote = 900;
     const c = document.createElement("canvas");
-    c.width = Math.round(img.width * k);
-    c.height = Math.round(img.height * k);
-    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    let sortie = c.toDataURL("image/jpeg", 0.72);
-    if (sortie.length > 850000) sortie = c.toDataURL("image/jpeg", 0.5);
+    c.width = cote; c.height = cote;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, cote, cote);
+    const k = Math.min(cote / img.width, cote / img.height);
+    const w = img.width * k, h = img.height * k;
+    ctx.drawImage(img, (cote - w) / 2, (cote - h) / 2, w, h);
+    let sortie = c.toDataURL("image/jpeg", 0.68);
+    if (sortie.length > 350000) sortie = c.toDataURL("image/jpeg", 0.5);
     URL.revokeObjectURL(url);
     resoudre(sortie);
   };
   img.onerror = () => { URL.revokeObjectURL(url); rejeter(new Error("Photo illisible")); };
   img.src = url;
 });
+const tailleKo = (base64) => Math.round(((base64 && base64.length) || 0) * 0.75 / 1024);
 
 /* ------------------------------------------------------------------ */
 
@@ -215,7 +220,15 @@ function NathPointBrod() {
       const c = s.data();
       if (c.categories) setCategories(c.categories);
       if (c.tissus) setTissusRef(c.tissus);
-      if (c.accessoires) setAccRef(c.accessoires);
+      if (c.accessoires) {
+        let acc = c.accessoires;
+        if (acc.some((a) => a.nom.toLowerCase().includes("fermeture") && a.mode === "piece")) {
+          acc = acc.map((a) => a.nom.toLowerCase().includes("fermeture") && a.mode === "piece"
+            ? { ...a, mode: "metre", largeur: a.largeur || 3 } : a);
+          db.collection("referentiels").doc("config").set({ accessoires: acc }, { merge: true });
+        }
+        setAccRef(acc);
+      }
       if (c.intisses) setIntisseRef(c.intisses);
       if (c.bobines) setBobinesRef(c.bobines);
       if (c.canette) setCanette(c.canette);
@@ -241,11 +254,13 @@ function NathPointBrod() {
   /* ---------- boutique ---------- */
   const [filtre, setFiltre] = useState("Tout");
   const [fiche, setFiche] = useState(null);
+  const [photoIdx, setPhotoIdx] = useState(0);
   const [resaPour, setResaPour] = useState(null);
   const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
   const [erreur, setErreur] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  const [mentionsOuvertes, setMentionsOuvertes] = useState(false);
 
   /* ---------- gestion ---------- */
   const [ongletG, setOngletG] = useState("creer");
@@ -339,9 +354,21 @@ function NathPointBrod() {
   };
 
   const ajouterPhoto = (article, fichier) => {
-    compresserPhoto(fichier)
-      .then((base64) => db.collection("articles").doc(article.id).update({ photo: base64 }))
-      .catch((e) => montrerToast("Photo : " + e.message));
+    compresserPhoto(fichier).then((base64) => {
+      const photos = [...(article.photos || (article.photo ? [article.photo] : [])), base64];
+      if (photos.length > 4) { montrerToast("4 photos maximum par article"); return; }
+      const total = photos.reduce((s, p) => s + p.length, 0);
+      if (total > 900000) { montrerToast("Trop lourd — retirez d'abord une photo"); return; }
+      db.collection("articles").doc(article.id).update({ photos, photo: photos[0] })
+        .then(() => montrerToast("Photo ajoutée (" + tailleKo(base64) + " Ko)"))
+        .catch((e) => montrerToast("Erreur : " + e.message));
+    }).catch((e) => montrerToast("Photo : " + e.message));
+  };
+
+  const retirerPhoto = (article, index) => {
+    const photos = (article.photos || []).filter((_, i) => i !== index);
+    db.collection("articles").doc(article.id).update({ photos, photo: photos[0] || null })
+      .catch((e) => montrerToast("Erreur : " + e.message));
   };
 
   const publier = (article) => {
@@ -477,7 +504,7 @@ function NathPointBrod() {
             {visibles.map((a) => {
               const prise = a.statut === "réservé";
               return (
-                <article key={a.id} className={"carte" + (prise ? " prise" : "")} onClick={() => !prise && setFiche(a)}>
+                <article key={a.id} className={"carte" + (prise ? " prise" : "")} onClick={() => { if (!prise) { setFiche(a); setPhotoIdx(0); } }}>
                   <div className="photo" style={{ background: a.fond }}>
                     {a.photo ? <img src={a.photo} alt="" className="photo-img" /> : <span>{a.emoji}</span>}
                     {prise && <div className="ruban">Réservée ☺</div>}
@@ -497,7 +524,8 @@ function NathPointBrod() {
           </main>
 
           <footer className="pied">
-            Retrait en atelier à Rossillon ou en magasin à Belley.<br />Nath Point Brod — artisan d’art ☺
+            Retrait en atelier à Rossillon ou en magasin à Belley.<br />Nath Point Brod — artisan d’art ☺<br />
+            <button className="lien-mentions" onClick={() => setMentionsOuvertes(true)}>Mentions légales & confidentialité</button>
           </footer>
         </>
       )}
@@ -576,7 +604,16 @@ function NathPointBrod() {
                   <label className="label">Catégorie</label>
                   <div className="choix-grille">
                     {categories.map((c) => (
-                      <button key={c} className={"choix-case" + (categorie === c ? " choisi" : "")} onClick={() => setCategorie(c)}>{c}</button>
+                      <span key={c} className={"choix-case avec-suppr" + (categorie === c ? " choisi" : "")} onClick={() => setCategorie(c)}>
+                        {c}
+                        <button className="mini-suppr" aria-label="Supprimer" onClick={(ev) => {
+                          ev.stopPropagation();
+                          if (!window.confirm("Supprimer la catégorie « " + c + " » de la liste ?")) return;
+                          const next = categories.filter((x) => x !== c);
+                          setCategories(next); persister("categories", next);
+                          if (categorie === c) setCategorie(next[0] || "");
+                        }}>✕</button>
+                      </span>
                     ))}
                     <button className="choix-case ajout" onClick={() => setFormCat(formCat === null ? "" : null)}>+ Nouvelle</button>
                   </div>
@@ -600,7 +637,16 @@ function NathPointBrod() {
                   <label className="label">Tissu utilisé</label>
                   <div className="choix-grille">
                     {tissusRef.map((t) => (
-                      <button key={t.nom} className={"choix-case" + (tissuNom === t.nom ? " choisi" : "")} onClick={() => setTissuNom(t.nom)}>{t.nom}</button>
+                      <span key={t.nom} className={"choix-case avec-suppr" + (tissuNom === t.nom ? " choisi" : "")} onClick={() => setTissuNom(t.nom)}>
+                        {t.nom}
+                        <button className="mini-suppr" aria-label="Supprimer" onClick={(ev) => {
+                          ev.stopPropagation();
+                          if (!window.confirm("Supprimer le tissu « " + t.nom + " » de la liste ?")) return;
+                          const next = tissusRef.filter((x) => x.nom !== t.nom);
+                          setTissusRef(next); persister("tissus", next);
+                          if (tissuNom === t.nom) setTissuNom(next[0] ? next[0].nom : "");
+                        }}>✕</button>
+                      </span>
                     ))}
                     <button className="choix-case ajout" onClick={() => setFormTissu(formTissu ? null : { nom: "", prixMetre: "", laize: 140 })}>+ Nouveau tissu</button>
                   </div>
@@ -682,6 +728,11 @@ function NathPointBrod() {
                             </div>
                           </div>
                         )}
+                        <button className="mini-suppr" aria-label="Supprimer de la liste" onClick={() => {
+                          if (!window.confirm("Supprimer « " + a.nom + " » de la liste des accessoires ?")) return;
+                          const next = accRef.filter((x) => x.nom !== a.nom);
+                          setAccRef(next); persister("accessoires", next);
+                        }}>✕</button>
                       </div>
                     );
                   })}
@@ -780,6 +831,11 @@ function NathPointBrod() {
                             </div>
                           </div>
                         )}
+                        <button className="mini-suppr" aria-label="Supprimer de la liste" onClick={() => {
+                          if (!window.confirm("Supprimer « " + i.nom + " » de la liste des intissés ?")) return;
+                          const next = intisseRef.filter((x) => x.nom !== i.nom);
+                          setIntisseRef(next); persister("intisses", next);
+                        }}>✕</button>
                       </div>
                     );
                   })}
@@ -837,8 +893,14 @@ function NathPointBrod() {
                     <div className="recap-ligne"><span>Électricité + usure machine</span><span>{eur(coutMachine)}</span></div>
                     <div className="recap-ligne total"><span>Coût de revient</span><span>{eur(coutRevient)}</span></div>
                   </div>
-                  <label className="label">Marge : {margePct} %</label>
-                  <input type="range" min="0" max="70" value={margePct} className="curseur" onChange={(e) => setMargePct(+e.target.value)} />
+                  <label className="label">Marge (% du prix hors URSSAF) — réglable au dixième près</label>
+                  <div className="champ-ligne">
+                    <input type="range" min="0" max="70" step="0.1" value={margePct} className="curseur"
+                      onChange={(e) => setMargePct(+e.target.value)} />
+                    <input className="champ mini" type="number" inputMode="decimal" step="0.1" min="0" max="95"
+                      value={margePct} onChange={(e) => setMargePct(Math.max(0, Math.min(95, +e.target.value || 0)))} />
+                    <span className="suffixe">%</span>
+                  </div>
                   <div className="recap" style={{ marginTop: 12 }}>
                     <div className="recap-ligne"><span>Coût + bénéfice ({eur(benefice)})</span><span>{eur(prixAvantUrssaf)}</span></div>
                     <div className="recap-ligne"><span>URSSAF {urssafPct} % du prix final</span><span>{eur(montantUrssaf)}</span></div>
@@ -871,33 +933,44 @@ function NathPointBrod() {
               {enAttente.length === 0 ? (
                 <div className="vide-msg">Rien en attente : toutes vos pièces ont leur photo et sont publiées.</div>
               ) : (
-                enAttente.map((p) => (
-                  <div key={p.id} className="publier-carte">
-                    <div className="publier-haut">
-                      {p.photo ? (
-                        <img src={p.photo} alt="" className="photo-mini-img" />
-                      ) : (
-                        <label className="photo-bouton">📷 Photo
-                          <input type="file" accept="image/*" capture="environment" className="photo-input"
-                            onChange={(e) => {
-                              const f = e.target.files && e.target.files[0];
-                              if (f) ajouterPhoto(p, f);
-                            }} />
-                        </label>
-                      )}
-                      <div className="ligne-infos">
-                        <div className="ligne-nom">{p.nom} · {eur(p.prix)}</div>
-                        <div className="ligne-detail">{p.categorie} · {p.dims}</div>
-                        <span className="ref-badge">{p.ref}</span>
+                enAttente.map((p) => {
+                  const photos = p.photos || (p.photo ? [p.photo] : []);
+                  return (
+                    <div key={p.id} className="publier-carte">
+                      <div className="publier-haut">
+                        <div className="ligne-infos">
+                          <div className="ligne-nom">{p.nom} · {eur(p.prix)}</div>
+                          <div className="ligne-detail">{p.categorie} · {p.dims}</div>
+                          <span className="ref-badge">{p.ref}</span>
+                        </div>
+                        <button className="btn-suppr" onClick={() => supprimerArticle(p)} aria-label="Supprimer">✕</button>
                       </div>
-                      <button className="btn-suppr" onClick={() => supprimerArticle(p)} aria-label="Supprimer">✕</button>
+                      <div className="photos-rangee">
+                        {photos.map((ph, i) => (
+                          <div key={i} className="photo-vignette">
+                            <img src={ph} alt="" />
+                            <span className="photo-poids">{tailleKo(ph)} Ko</span>
+                            <button className="photo-retirer" onClick={() => retirerPhoto(p, i)} aria-label="Retirer">✕</button>
+                          </div>
+                        ))}
+                        {photos.length < 4 && (
+                          <label className="photo-bouton">📷 {photos.length ? "+ Vue" : "Photo"}
+                            <input type="file" accept="image/*" capture="environment" className="photo-input"
+                              onChange={(e) => {
+                                const f = e.target.files && e.target.files[0];
+                                if (f) ajouterPhoto(p, f);
+                                e.target.value = "";
+                              }} />
+                          </label>
+                        )}
+                      </div>
+                      <button className={"btn-principal petit" + (photos.length ? "" : " inactif")} disabled={!photos.length}
+                        onClick={() => publier(p)}>
+                        {photos.length ? "Publier maintenant" : "Ajoutez au moins une photo pour publier"}
+                      </button>
                     </div>
-                    <button className={"btn-principal petit" + (p.photo ? "" : " inactif")} disabled={!p.photo}
-                      onClick={() => publier(p)}>
-                      {p.photo ? "Publier maintenant" : "Ajoutez la photo pour publier"}
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </main>
           )}
@@ -1013,33 +1086,44 @@ function NathPointBrod() {
       )}
 
       {/* ================= FICHE ARTICLE ================= */}
-      {fiche && !resaPour && (
-        <div className="voile" onClick={() => setFiche(null)}>
-          <div className="panneau" onClick={(e) => e.stopPropagation()}>
-            <button className="fermer" onClick={() => setFiche(null)}>✕</button>
-            <div className="photo grande" style={{ background: fiche.fond }}>
-              {fiche.photo ? <img src={fiche.photo} alt="" className="photo-img" /> : <span>{fiche.emoji}</span>}
-            </div>
-            <div className="panneau-corps">
-              <div className="carte-cat">{fiche.categorie}</div>
-              <h2 className="panneau-nom">{fiche.nom}</h2>
-              <div className="details">
-                <div className="detail-ligne"><span>Dimensions</span><span>{fiche.dims}</span></div>
-                <div className="detail-ligne"><span>Tissu</span><span>{fiche.tissu || "—"}</span></div>
-                <div className="detail-ligne"><span>Référence</span><span>{fiche.ref}</span></div>
+      {fiche && !resaPour && (() => {
+        const photosF = fiche.photos || (fiche.photo ? [fiche.photo] : []);
+        const phActive = photosF[Math.min(photoIdx, photosF.length - 1)] || null;
+        return (
+          <div className="voile" onClick={() => setFiche(null)}>
+            <div className="panneau" onClick={(e) => e.stopPropagation()}>
+              <button className="fermer" onClick={() => setFiche(null)}>✕</button>
+              <div className="photo grande" style={{ background: fiche.fond }}>
+                {phActive ? <img src={phActive} alt="" className="photo-img" /> : <span>{fiche.emoji}</span>}
               </div>
-              <div className="panneau-pied">
-                <span className="prix grand">{eur(fiche.prix)}</span>
-                <button className="btn-principal petit" onClick={() => setResaPour(fiche)}>Réserver cette pièce</button>
+              {photosF.length > 1 && (
+                <div className="fiche-vignettes">
+                  {photosF.map((ph, i) => (
+                    <img key={i} src={ph} alt="" className={i === photoIdx ? "choisi" : ""} onClick={() => setPhotoIdx(i)} />
+                  ))}
+                </div>
+              )}
+              <div className="panneau-corps">
+                <div className="carte-cat">{fiche.categorie}</div>
+                <h2 className="panneau-nom">{fiche.nom}</h2>
+                <div className="details">
+                  <div className="detail-ligne"><span>Dimensions</span><span>{fiche.dims}</span></div>
+                  <div className="detail-ligne"><span>Tissu</span><span>{fiche.tissu || "—"}</span></div>
+                  <div className="detail-ligne"><span>Référence</span><span>{fiche.ref}</span></div>
+                </div>
+                <div className="panneau-pied">
+                  <span className="prix grand">{eur(fiche.prix)}</span>
+                  <button className="btn-principal petit" onClick={() => setResaPour(fiche)}>Réserver cette pièce</button>
+                </div>
+                <p className="note-resa">
+                  Réservation gratuite : la pièce est <strong>mise de côté 1 semaine</strong> à compter d’aujourd’hui.
+                  Règlement au retrait, en atelier à Rossillon ou en magasin à Belley.
+                </p>
               </div>
-              <p className="note-resa">
-                Réservation gratuite : la pièce est <strong>mise de côté 1 semaine</strong> à compter d’aujourd’hui.
-                Règlement au retrait, en atelier à Rossillon ou en magasin à Belley.
-              </p>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ================= FORMULAIRE RÉSERVATION ================= */}
       {resaPour && (
@@ -1101,6 +1185,35 @@ function NathPointBrod() {
               Nath vous recontacte pour convenir du retrait ☺
             </p>
             <button className="btn-principal" onClick={() => setConfirmation(null)}>Continuer la visite</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MENTIONS LÉGALES ================= */}
+      {mentionsOuvertes && (
+        <div className="voile" onClick={() => setMentionsOuvertes(false)}>
+          <div className="panneau" onClick={(e) => e.stopPropagation()}>
+            <button className="fermer" onClick={() => setMentionsOuvertes(false)}>✕</button>
+            <div className="panneau-corps mentions">
+              <h2 className="panneau-nom">Mentions légales</h2>
+              <p><strong>Éditeur du site</strong><br />
+                Nath Point Brod — [PRÉNOM NOM DE TA MÈRE], entrepreneure individuelle<br />
+                Atelier : Rossillon (01510) · Point de vente : Belley (01300)<br />
+                SIRET : [NUMÉRO SIRET]<br />
+                Contact : [EMAIL DE CONTACT] · [TÉLÉPHONE — facultatif]</p>
+              <p><strong>Directrice de la publication</strong> : [PRÉNOM NOM DE TA MÈRE]</p>
+              <p><strong>Hébergement</strong><br />
+                Site : GitHub Inc., 88 Colin P. Kelly Jr St, San Francisco, CA 94107, États-Unis (GitHub Pages)<br />
+                Données : Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irlande (Firebase — données hébergées en région Paris, europe-west9)</p>
+
+              <h2 className="panneau-nom" style={{ marginTop: 18 }}>Politique de confidentialité</h2>
+              <p><strong>Données collectées.</strong> Lors d’une réservation, nous recueillons : nom, prénom, téléphone, adresse email, lieu de retrait choisi et, si vous l’acceptez, votre consentement à recevoir notre newsletter. Aucune donnée bancaire n’est collectée : le site ne propose pas de paiement en ligne.</p>
+              <p><strong>Finalité et base légale.</strong> Ces données servent uniquement à traiter votre réservation et à vous recontacter pour la remise de la pièce (exécution de mesures précontractuelles), et — avec votre consentement explicite — à vous envoyer la newsletter des nouveautés (environ 1 email par mois).</p>
+              <p><strong>Destinataires.</strong> Vos données sont accessibles à la seule éditrice du site. Elles ne sont ni vendues, ni transmises à des tiers. Elles sont stockées de façon sécurisée sur Firebase (Google), en Europe.</p>
+              <p><strong>Durée de conservation.</strong> Les données de réservation sont supprimées au plus tard 1 an après la remise ou l’annulation. Les données de la newsletter sont conservées jusqu’à votre désinscription, possible à tout moment via le lien présent dans chaque email ou sur simple demande.</p>
+              <p><strong>Cookies.</strong> Ce site n’utilise ni cookie publicitaire ni traceur d’audience.</p>
+              <p><strong>Vos droits.</strong> Conformément au RGPD, vous disposez d’un droit d’accès, de rectification, d’effacement, d’opposition et de portabilité de vos données. Pour l’exercer : [EMAIL DE CONTACT]. Vous pouvez également adresser une réclamation à la CNIL (www.cnil.fr).</p>
+            </div>
           </div>
         </div>
       )}
@@ -1282,6 +1395,18 @@ const CSS = `
 .case { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 11.5px; color: #6E6366; line-height: 1.5; }
 .case input { width: 18px; height: 18px; accent-color: var(--bordeaux); flex: 0 0 18px; margin-top: 1px; }
 .erreur { margin-top: 12px; background: #FDECEC; color: var(--bordeaux); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; }
+.choix-case.avec-suppr { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.mini-suppr { border: none; background: none; color: inherit; opacity: 0.55; font-size: 11px; padding: 2px; line-height: 1; }
+.photos-rangee { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.photo-vignette { position: relative; width: 64px; height: 64px; }
+.photo-vignette img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+.photo-poids { position: absolute; bottom: 2px; left: 2px; background: rgba(58,50,52,0.72); color: #fff; font-size: 9px; border-radius: 4px; padding: 1px 4px; }
+.photo-retirer { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: var(--bordeaux); color: #fff; font-size: 10px; line-height: 1; }
+.fiche-vignettes { display: flex; gap: 8px; padding: 10px 18px 0; flex-wrap: wrap; }
+.fiche-vignettes img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
+.fiche-vignettes img.choisi { border-color: var(--bordeaux); }
+.lien-mentions { border: none; background: none; color: #8B8082; font-size: 11px; text-decoration: underline; padding: 4px 0 0; font-family: 'Poppins', sans-serif; }
+.mentions p { font-size: 12px; color: #55504A; line-height: 1.6; margin-bottom: 10px; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px; z-index: 40; white-space: nowrap; }
 
 @media (min-width: 700px) {
