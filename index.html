@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v6-firebase" />
+  <meta name="version" content="v7-firebase-prix" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
@@ -615,7 +615,20 @@ function NathPointBrod() {
                       }}>Ajouter le tissu</button>
                     </div>
                   )}
-                  {tissuSel && <div className="info-calc">{tissuSel.nom} : {eur(tissuSel.prixMetre)} / m — laize {tissuSel.laize} cm</div>}
+                  {tissuSel && (
+                    <div className="deux-cols">
+                      <Champ label={"Prix — " + tissuSel.nom} suffixe="€ / m" type="number" inputMode="decimal" step="0.10"
+                        value={tissuSel.prixMetre} onChange={(e) => {
+                          const next = tissusRef.map((t) => t.nom === tissuSel.nom ? { ...t, prixMetre: +e.target.value } : t);
+                          setTissusRef(next); persister("tissus", next);
+                        }} />
+                      <Champ label="Laize" suffixe="cm" type="number" inputMode="numeric"
+                        value={tissuSel.laize} onChange={(e) => {
+                          const next = tissusRef.map((t) => t.nom === tissuSel.nom ? { ...t, laize: +e.target.value } : t);
+                          setTissusRef(next); persister("tissus", next);
+                        }} />
+                    </div>
+                  )}
                   <label className="label">Dimensions du tissu découpé</label>
                   <div className="champ-ligne">
                     <input className="champ mini" type="number" inputMode="decimal" value={dims.largeur}
@@ -641,15 +654,27 @@ function NathPointBrod() {
                           <span className="acc-coche">{actif ? "✓" : ""}</span>
                           <span>{a.nom}<small className="acc-detail">{a.mode === "piece" ? eur(a.prix) + " / pièce" : eur(a.prix) + " / m · larg. " + a.largeur + " cm"}</small></span>
                         </button>
-                        {actif && (a.mode === "piece" ? (
-                          <Stepper valeur={q} onChange={(v) => setAccUsage({ ...accUsage, [a.nom]: v })} />
-                        ) : (
-                          <div className="champ-ligne">
-                            <input className="champ mini" type="number" inputMode="numeric" value={q}
-                              onChange={(e) => setAccUsage({ ...accUsage, [a.nom]: +e.target.value })} />
-                            <span className="suffixe">cm</span>
+                        {actif && (
+                          <div className="acc-droite">
+                            {a.mode === "piece" ? (
+                              <Stepper valeur={q} onChange={(v) => setAccUsage({ ...accUsage, [a.nom]: v })} />
+                            ) : (
+                              <div className="champ-ligne">
+                                <input className="champ mini" type="number" inputMode="numeric" value={q}
+                                  onChange={(e) => setAccUsage({ ...accUsage, [a.nom]: +e.target.value })} />
+                                <span className="suffixe">cm</span>
+                              </div>
+                            )}
+                            <div className="champ-ligne">
+                              <input className="champ mini" type="number" inputMode="decimal" step="0.05" value={a.prix}
+                                onChange={(e) => {
+                                  const next = accRef.map((x) => x.nom === a.nom ? { ...x, prix: +e.target.value } : x);
+                                  setAccRef(next); persister("accessoires", next);
+                                }} />
+                              <span className="suffixe">{a.mode === "piece" ? "€/p" : "€/m"}</span>
+                            </div>
                           </div>
-                        ))}
+                        )}
                       </div>
                     );
                   })}
@@ -732,10 +757,20 @@ function NathPointBrod() {
                           <span>{i.nom}<small className="acc-detail">{eur(i.prixMetre)} / m · laize {i.laize} cm</small></span>
                         </button>
                         {actif && (
-                          <div className="champ-ligne">
-                            <input className="champ mini" type="number" inputMode="numeric" value={cm}
-                              onChange={(e) => setIntisseUsage({ ...intisseUsage, [i.nom]: +e.target.value })} />
-                            <span className="suffixe">cm</span>
+                          <div className="acc-droite">
+                            <div className="champ-ligne">
+                              <input className="champ mini" type="number" inputMode="numeric" value={cm}
+                                onChange={(e) => setIntisseUsage({ ...intisseUsage, [i.nom]: +e.target.value })} />
+                              <span className="suffixe">cm</span>
+                            </div>
+                            <div className="champ-ligne">
+                              <input className="champ mini" type="number" inputMode="decimal" step="0.10" value={i.prixMetre}
+                                onChange={(e) => {
+                                  const next = intisseRef.map((x) => x.nom === i.nom ? { ...x, prixMetre: +e.target.value } : x);
+                                  setIntisseRef(next); persister("intisses", next);
+                                }} />
+                              <span className="suffixe">€/m</span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1167,6 +1202,7 @@ const CSS = `
 .acc-detail { display: block; font-size: 10.5px; color: #8B8082; font-weight: 300; }
 .acc-coche { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--rose); flex: 0 0 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: var(--bordeaux); }
 .acc-ligne.actif .acc-coche { border-color: var(--bordeaux); background: var(--rose-pale); }
+.acc-droite { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .stepper { display: flex; align-items: center; gap: 2px; }
 .stepper button { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--rose); background: var(--carte); font-size: 16px; color: var(--bordeaux); }
 .stepper span { min-width: 22px; text-align: center; font-weight: 600; font-size: 14px; }
