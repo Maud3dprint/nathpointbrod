@@ -4,12 +4,28 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="description" content="Nath Point Brod — broderie personnalisée, artisan d'art. Pièces uniques à réserver, retrait en atelier à Rossillon ou en magasin à Belley." />
+  <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Versions figées + CDN jsDelivr (plus fiable que les redirections unpkg) -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+  <script>
+    // Affiche toute erreur à l'écran au lieu d'une page blanche
+    function afficherErreur(msg) {
+      var b = document.createElement("div");
+      b.style.cssText = "position:fixed;top:0;left:0;right:0;background:#6D071A;color:#fff;padding:14px;font:13px/1.5 sans-serif;z-index:9999;white-space:pre-wrap";
+      b.textContent = "Erreur de chargement — envoyez ce message à Sam :\n" + msg;
+      document.body.appendChild(b);
+    }
+    window.addEventListener("error", function (e) { afficherErreur(e.message + (e.filename ? "\n" + e.filename + " ligne " + e.lineno : "")); });
+    window.addEventListener("unhandledrejection", function (e) { afficherErreur(String(e.reason)); });
+    window.addEventListener("DOMContentLoaded", function () {
+      if (typeof React === "undefined") afficherErreur("React n'a pas pu être chargé (connexion au CDN bloquée ?)");
+      else if (typeof Babel === "undefined") afficherErreur("Babel n'a pas pu être chargé (connexion au CDN bloquée ?)");
+    });
+  </script>
 </head>
 <body>
   <noscript>Cette boutique nécessite JavaScript pour fonctionner.</noscript>
