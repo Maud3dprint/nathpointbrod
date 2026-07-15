@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v10-photos-listes" />
+  <meta name="version" content="v11-edition-cadrage" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
@@ -255,6 +255,10 @@ function NathPointBrod() {
   const [filtre, setFiltre] = useState("Tout");
   const [fiche, setFiche] = useState(null);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [editionId, setEditionId] = useState(null);
+  const [editForm, setEditForm] = useState({ nom: "", dims: "", prix: "", categorie: "" });
+  const [recadrage, setRecadrage] = useState(null); // { articleId, src, w, h, zoom, x, y }
+  const glisser = useRef(null);
   const [resaPour, setResaPour] = useState(null);
   const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
   const [erreur, setErreur] = useState("");
@@ -369,6 +373,56 @@ function NathPointBrod() {
     const photos = (article.photos || []).filter((_, i) => i !== index);
     db.collection("articles").doc(article.id).update({ photos, photo: photos[0] || null })
       .catch((e) => montrerToast("Erreur : " + e.message));
+  };
+
+  const ajouterPhotoBase64 = (articleId, base64) => {
+    const article = articles.find((x) => x.id === articleId);
+    if (!article) return;
+    const photos = [...(article.photos || (article.photo ? [article.photo] : [])), base64];
+    if (photos.length > 4) { montrerToast("4 photos maximum par article"); return; }
+    const total = photos.reduce((s, p) => s + p.length, 0);
+    if (total > 900000) { montrerToast("Trop lourd — retirez d'abord une photo"); return; }
+    db.collection("articles").doc(articleId).update({ photos, photo: photos[0] })
+      .then(() => montrerToast("Photo ajoutée (" + tailleKo(base64) + " Ko)"))
+      .catch((e) => montrerToast("Erreur : " + e.message));
+  };
+
+  const ouvrirRecadrage = (article, fichier) => {
+    const src = URL.createObjectURL(fichier);
+    const img = new Image();
+    img.onload = () => setRecadrage({ articleId: article.id, src, w: img.width, h: img.height, zoom: 1, x: null, y: null });
+    img.onerror = () => { URL.revokeObjectURL(src); montrerToast("Photo illisible"); };
+    img.src = src;
+  };
+
+  const validerRecadrage = (entiere) => {
+    const r = recadrage;
+    const img = new Image();
+    img.onload = () => {
+      const cote = 900;
+      const c = document.createElement("canvas");
+      c.width = cote; c.height = cote;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, cote, cote);
+      if (entiere) {
+        const k = Math.min(cote / r.w, cote / r.h);
+        ctx.drawImage(img, (cote - r.w * k) / 2, (cote - r.h * k) / 2, r.w * k, r.h * k);
+      } else {
+        const S = 300, F = cote / S;
+        const echelle = (S / Math.min(r.w, r.h)) * r.zoom;
+        const dw = r.w * echelle, dh = r.h * echelle;
+        const x = r.x === null ? (S - dw) / 2 : r.x;
+        const y = r.y === null ? (S - dh) / 2 : r.y;
+        ctx.drawImage(img, x * F, y * F, dw * F, dh * F);
+      }
+      let sortie = c.toDataURL("image/jpeg", 0.68);
+      if (sortie.length > 350000) sortie = c.toDataURL("image/jpeg", 0.5);
+      URL.revokeObjectURL(r.src);
+      ajouterPhotoBase64(r.articleId, sortie);
+      setRecadrage(null);
+    };
+    img.src = r.src;
   };
 
   const publier = (article) => {
@@ -943,6 +997,10 @@ function NathPointBrod() {
                           <div className="ligne-detail">{p.categorie} · {p.dims}</div>
                           <span className="ref-badge">{p.ref}</span>
                         </div>
+                        <button className="btn-edit" aria-label="Modifier" onClick={() => {
+                          setEditionId(p.id);
+                          setEditForm({ nom: p.nom, dims: p.dims, prix: p.prix, categorie: p.categorie });
+                        }}>✎</button>
                         <button className="btn-suppr" onClick={() => supprimerArticle(p)} aria-label="Supprimer">✕</button>
                       </div>
                       <div className="photos-rangee">
@@ -958,7 +1016,7 @@ function NathPointBrod() {
                             <input type="file" accept="image/*" capture="environment" className="photo-input"
                               onChange={(e) => {
                                 const f = e.target.files && e.target.files[0];
-                                if (f) ajouterPhoto(p, f);
+                                if (f) ouvrirRecadrage(p, f);
                                 e.target.value = "";
                               }} />
                           </label>
@@ -1065,6 +1123,10 @@ function NathPointBrod() {
                             {a.statut === "réservé" && <span className="badge-resa"> réservé</span>}
                           </div>
                         </div>
+                        <button className="btn-edit" aria-label="Modifier" onClick={() => {
+                          setEditionId(a.id);
+                          setEditForm({ nom: a.nom, dims: a.dims, prix: a.prix, categorie: a.categorie });
+                        }}>✎</button>
                         {canalPour === a.id ? (
                           <div className="canaux">
                             {["Marché", "Magasin", "Site"].map((c) => (
@@ -1188,6 +1250,113 @@ function NathPointBrod() {
           </div>
         </div>
       )}
+
+      {/* ================= MODIFIER UN ARTICLE ================= */}
+      {editionId && (() => {
+        const art = articles.find((xx) => xx.id === editionId);
+        if (!art) return null;
+        const photos = art.photos || (art.photo ? [art.photo] : []);
+        return (
+          <div className="voile" onClick={() => setEditionId(null)}>
+            <div className="panneau" onClick={(e) => e.stopPropagation()}>
+              <button className="fermer" onClick={() => setEditionId(null)}>✕</button>
+              <div className="panneau-corps">
+                <h2 className="panneau-nom">Modifier {art.ref}</h2>
+                <Champ label="Titre" value={editForm.nom} onChange={(e) => setEditForm({ ...editForm, nom: e.target.value })} />
+                <Champ label="Dimensions affichées" value={editForm.dims} onChange={(e) => setEditForm({ ...editForm, dims: e.target.value })} />
+                <Champ label="Prix" suffixe="€" type="number" inputMode="decimal" step="0.10" value={editForm.prix}
+                  onChange={(e) => setEditForm({ ...editForm, prix: e.target.value })} />
+                <label className="label">Catégorie</label>
+                <div className="choix-grille">
+                  {categories.map((cc) => (
+                    <button key={cc} className={"choix-case" + (editForm.categorie === cc ? " choisi" : "")}
+                      onClick={() => setEditForm({ ...editForm, categorie: cc })}>{cc}</button>
+                  ))}
+                </div>
+                <label className="label">Photos (modifications immédiates)</label>
+                <div className="photos-rangee">
+                  {photos.map((ph, i) => (
+                    <div key={i} className="photo-vignette">
+                      <img src={ph} alt="" />
+                      <span className="photo-poids">{tailleKo(ph)} Ko</span>
+                      <button className="photo-retirer" onClick={() => retirerPhoto(art, i)} aria-label="Retirer">✕</button>
+                    </div>
+                  ))}
+                  {photos.length < 4 && (
+                    <label className="photo-bouton">📷 + Vue
+                      <input type="file" accept="image/*" capture="environment" className="photo-input"
+                        onChange={(e) => {
+                          const f = e.target.files && e.target.files[0];
+                          if (f) ouvrirRecadrage(art, f);
+                          e.target.value = "";
+                        }} />
+                    </label>
+                  )}
+                </div>
+                <button className="btn-principal" onClick={() => {
+                  db.collection("articles").doc(art.id).update({
+                    nom: editForm.nom.trim() || art.nom,
+                    dims: editForm.dims.trim() || "—",
+                    prix: +editForm.prix || art.prix,
+                    categorie: editForm.categorie || art.categorie,
+                  }).then(() => { montrerToast(art.ref + " modifié"); setEditionId(null); })
+                    .catch((e) => montrerToast("Erreur : " + e.message));
+                }}>Enregistrer les modifications</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ================= CADRAGE PHOTO ================= */}
+      {recadrage && (() => {
+        const S = 300;
+        const echelle = (S / Math.min(recadrage.w, recadrage.h)) * recadrage.zoom;
+        const dw = recadrage.w * echelle, dh = recadrage.h * echelle;
+        const x = recadrage.x === null ? (S - dw) / 2 : recadrage.x;
+        const y = recadrage.y === null ? (S - dh) / 2 : recadrage.y;
+        const borne = (v, min) => Math.min(0, Math.max(min, v));
+        return (
+          <div className="voile">
+            <div className="panneau" onClick={(e) => e.stopPropagation()}>
+              <div className="panneau-corps">
+                <h2 className="panneau-nom">Cadrer la photo</h2>
+                <p className="aide">Déplacez la photo avec le doigt, zoomez avec le curseur — ou gardez l’image entière sur fond blanc.</p>
+                <div className="recadrage-zone"
+                  onPointerDown={(e) => {
+                    glisser.current = { sx: e.clientX, sy: e.clientY, ox: x, oy: y };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!glisser.current) return;
+                    setRecadrage({ ...recadrage,
+                      x: borne(glisser.current.ox + e.clientX - glisser.current.sx, S - dw),
+                      y: borne(glisser.current.oy + e.clientY - glisser.current.sy, S - dh) });
+                  }}
+                  onPointerUp={() => { glisser.current = null; }}>
+                  <img src={recadrage.src} alt="" style={{ width: dw, height: dh, left: x, top: y }} draggable={false} />
+                </div>
+                <label className="label">Zoom</label>
+                <input type="range" min="1" max="3" step="0.01" value={recadrage.zoom} className="curseur"
+                  onChange={(e) => {
+                    const z2 = +e.target.value;
+                    const base = S / Math.min(recadrage.w, recadrage.h);
+                    const dw2 = recadrage.w * base * z2, dh2 = recadrage.h * base * z2;
+                    const rapport = z2 / recadrage.zoom;
+                    setRecadrage({ ...recadrage, zoom: z2,
+                      x: borne(S / 2 - (S / 2 - x) * rapport, S - dw2),
+                      y: borne(S / 2 - (S / 2 - y) * rapport, S - dh2) });
+                  }} />
+                <div className="resa-actions">
+                  <button className="btn-secondaire mini-btn" onClick={() => { URL.revokeObjectURL(recadrage.src); setRecadrage(null); }}>Annuler</button>
+                  <button className="btn-secondaire mini-btn" onClick={() => validerRecadrage(true)}>Image entière</button>
+                  <button className="btn-principal petit" onClick={() => validerRecadrage(false)}>Valider ce cadrage</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ================= MENTIONS LÉGALES ================= */}
       {mentionsOuvertes && (
@@ -1405,6 +1574,12 @@ const CSS = `
 .fiche-vignettes { display: flex; gap: 8px; padding: 10px 18px 0; flex-wrap: wrap; }
 .fiche-vignettes img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
 .fiche-vignettes img.choisi { border-color: var(--bordeaux); }
+.btn-edit { border: none; background: none; color: var(--bordeaux); font-size: 16px; padding: 6px; }
+.recadrage-zone {
+  width: 300px; height: 300px; position: relative; overflow: hidden; border-radius: 12px;
+  margin: 0 auto; background: #EDE8E9; touch-action: none; cursor: grab;
+}
+.recadrage-zone img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
 .lien-mentions { border: none; background: none; color: #8B8082; font-size: 11px; text-decoration: underline; padding: 4px 0 0; font-family: 'Poppins', sans-serif; }
 .mentions p { font-size: 12px; color: #55504A; line-height: 1.6; margin-bottom: 10px; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bordeaux); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px; z-index: 40; white-space: nowrap; }
