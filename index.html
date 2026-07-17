@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v13-templates" />
+  <meta name="version" content="v13b-soude" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
@@ -56,7 +56,7 @@ const auth = firebase.auth();
 
 const VITESSE_BRODERIE = 600;
 const DUREE_RESA_JOURS = 7;
-const SERVICE_MAILS = const SERVICE_MAILS = "https://nathpointbrod-mails.vercel.app";
+const SERVICE_MAILS = "https://nathpointbrod-mails.vercel.app";
 const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
 
 const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",") + " €";
