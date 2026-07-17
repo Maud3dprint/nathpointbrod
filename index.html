@@ -4,8 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v13b-soude" />
+  <meta name="version" content="v14-creneaux" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
+  <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
+  <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://nathpointbrod.fr" />
+  <meta property="og:image" content="https://nathpointbrod.fr/partage.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="fr_FR" />
   <title>Nath Point Brod — broderie personnalisée</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>" />
   <script>
@@ -57,6 +65,48 @@ const auth = firebase.auth();
 const VITESSE_BRODERIE = 600;
 const DUREE_RESA_JOURS = 7;
 const SERVICE_MAILS = "https://nathpointbrod-mails.vercel.app";
+
+/* ---- lieux de retrait : adresses et horaires réels ---- */
+const TEL_PRO = "06 31 77 77 78";
+const LIEUX = {
+  "En atelier à Rossillon": {
+    nom: "Atelier Nath Point Brod — Rossillon",
+    adresse: "4 rue Joséphin Soulary, 01510 Rossillon",
+    horaires: "mardi et vendredi 14h–18h · samedi 14h–17h30",
+    plages: { 2: [[840, 1080]], 5: [[840, 1080]], 6: [[840, 1050]] },
+  },
+  "En magasin à Belley (La Grande Louve)": {
+    nom: "La Grande Louve, boutique d'artisans créateurs — Belley",
+    adresse: "41 Grande Rue, 01300 Belley",
+    horaires: "mardi, mercredi, jeudi et samedi 9h30–12h30 / 14h30–18h30 · vendredi 11h–19h",
+    plages: {
+      2: [[570, 750], [870, 1110]], 3: [[570, 750], [870, 1110]],
+      4: [[570, 750], [870, 1110]], 5: [[660, 1140]], 6: [[570, 750], [870, 1110]],
+    },
+  },
+};
+const fmtHeure = (m) => Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0");
+const isoLocal = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const heuresDispo = (lieu, d) => {
+  const plages = lieu.plages[d.getDay()] || [];
+  const res = [];
+  plages.forEach(([debut, fin]) => {
+    for (let m = debut; m <= fin - 30; m += 60) {
+      const t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, m);
+      if (t.getTime() > Date.now() + 60 * 60000) res.push(m); // au moins 1 h de préavis
+    }
+  });
+  return res;
+};
+const joursDispo = (lieu) => {
+  const arr = [];
+  const ajd = new Date();
+  for (let i = 0; i < 8 && arr.length < 6; i++) {
+    const d = new Date(ajd.getFullYear(), ajd.getMonth(), ajd.getDate() + i);
+    if (heuresDispo(lieu, d).length) arr.push(d);
+  }
+  return arr;
+};
 const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
 
 const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",") + " €";
@@ -538,7 +588,7 @@ function NathPointBrod() {
   const [recadrage, setRecadrage] = useState(null); // { articleId, src, w, h, zoom, x, y }
   const glisser = useRef(null);
   const [resaPour, setResaPour] = useState(null);
-  const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+  const [form, setForm] = useState({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "", creneauJour: "", creneauHeure: "" });
   const [erreur, setErreur] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
@@ -754,7 +804,9 @@ function NathPointBrod() {
       setErreur("Merci de remplir nom, prénom, téléphone et email."); return;
     }
     if (!form.retrait) { setErreur("Choisissez un lieu de retrait."); return; }
+    if (!form.creneauJour || !form.creneauHeure) { setErreur("Choisissez le jour et l'heure de votre passage."); return; }
     setEnvoiEnCours(true);
+    const lieuChoisi = LIEUX[form.retrait];
     const artDoc = db.collection("articles").doc(resaPour.id);
     const resDoc = db.collection("reservations").doc();
     const quand = Date.now();
@@ -765,6 +817,10 @@ function NathPointBrod() {
         articleId: resaPour.id, articleRef: resaPour.ref, articleNom: resaPour.nom, prix: resaPour.prix,
         nomF: form.nomF.trim(), prenom: form.prenom.trim(), tel: form.tel.trim(), email: form.email.trim(),
         nlOk: form.nlOk, retrait: form.retrait, quand, dateLimite: quand + DUREE_RESA_JOURS * 86400000,
+        creneau: {
+          jour: form.creneauJour, heure: form.creneauHeure,
+          lieuNom: lieuChoisi.nom, lieuAdresse: lieuChoisi.adresse, lieuHoraires: lieuChoisi.horaires,
+        },
       });
     })).then(() => {
       if (form.nlOk) {
@@ -780,9 +836,9 @@ function NathPointBrod() {
           body: JSON.stringify({ id: resDoc.id }),
         }).catch(() => {}); // l'email est un bonus : son échec ne bloque jamais la réservation
       }
-      setConfirmation({ ...resaPour, quand });
+      setConfirmation({ ...resaPour, quand, creneau: { jour: form.creneauJour, heure: form.creneauHeure, lieuNom: lieuChoisi.nom, lieuAdresse: lieuChoisi.adresse } });
       setResaPour(null); setFiche(null); setErreur("");
-      setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "" });
+      setForm({ nomF: "", prenom: "", tel: "", email: "", nlOk: false, retrait: "", creneauJour: "", creneauHeure: "" });
     }).catch((e) => setErreur(e.message))
       .finally(() => setEnvoiEnCours(false));
   };
@@ -1459,6 +1515,7 @@ function NathPointBrod() {
                     <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
                     <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
                     <div className="resa-detail">📍 Retrait : {r.retrait}</div>
+                    {r.creneau && <div className="resa-detail resa-creneau">📅 Passage prévu : <strong>{dateFR(r.creneau.jour)} vers {r.creneau.heure}</strong></div>}
                     <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
                     <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
                     <div className="resa-actions">
@@ -1735,11 +1792,46 @@ function NathPointBrod() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <label className="label">Retrait de la pièce *</label>
               <div className="retraits">
-                {["En atelier à Rossillon", "En magasin à Belley"].map((r) => (
+                {Object.keys(LIEUX).map((r) => (
                   <button key={r} className={"retrait" + (form.retrait === r ? " choisi" : "")}
-                    onClick={() => setForm({ ...form, retrait: r })}>{r}</button>
+                    onClick={() => setForm({ ...form, retrait: r, creneauJour: "", creneauHeure: "" })}>{r}</button>
                 ))}
               </div>
+              {form.retrait && (() => {
+                const lieu = LIEUX[form.retrait];
+                const jours = joursDispo(lieu);
+                const jourSel = jours.find((d) => isoLocal(d) === form.creneauJour);
+                return (
+                  <>
+                    <div className="encart-lieu">
+                      <strong>{lieu.nom}</strong><br />
+                      📍 {lieu.adresse}<br />
+                      🕐 {lieu.horaires}<br />
+                      📞 {TEL_PRO} · 💳 Règlement au retrait : espèces, chèque ou carte bancaire
+                    </div>
+                    <label className="label">Jour de retrait *</label>
+                    <div className="choix-grille">
+                      {jours.map((d) => (
+                        <button key={isoLocal(d)} className={"choix-case" + (form.creneauJour === isoLocal(d) ? " choisi" : "")}
+                          onClick={() => setForm({ ...form, creneauJour: isoLocal(d), creneauHeure: "" })}>
+                          {d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                        </button>
+                      ))}
+                    </div>
+                    {jourSel && (
+                      <>
+                        <label className="label">Vers quelle heure ? *</label>
+                        <div className="choix-grille">
+                          {heuresDispo(lieu, jourSel).map((m) => (
+                            <button key={m} className={"choix-case" + (form.creneauHeure === fmtHeure(m) ? " choisi" : "")}
+                              onClick={() => setForm({ ...form, creneauHeure: fmtHeure(m) })}>{fmtHeure(m)}</button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
               <div className="encart-duree">
                 ⏳ Votre pièce est mise de côté <strong>1 semaine</strong> à compter d’aujourd’hui —
                 jusqu’au <strong>{limiteResa(Date.now())}</strong>. Passé ce délai, elle est remise en boutique.
@@ -1766,7 +1858,11 @@ function NathPointBrod() {
             <h2 className="panneau-nom centre">C’est réservé !</h2>
             <p className="panneau-desc centre">
               Votre pièce est mise de côté jusqu’au <strong>{limiteResa(confirmation.quand)}</strong>.
-              Nath vous recontacte pour convenir du retrait ☺
+              {confirmation.creneau && (
+                <><br /><br />📅 Rendez-vous <strong>{dateFR(confirmation.creneau.jour)} vers {confirmation.creneau.heure}</strong><br />
+                📍 {confirmation.creneau.lieuNom}<br />{confirmation.creneau.lieuAdresse}<br /><br />
+                💳 Règlement sur place : espèces, chèque ou carte bancaire.</>
+              )}
             </p>
             <button className="btn-principal" onClick={() => setConfirmation(null)}>Continuer la visite</button>
           </div>
@@ -2079,6 +2175,8 @@ const CSS = `
 .panneau-pied { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .note-resa { font-size: 11px; color: #8B8082; text-align: center; margin-top: 12px; line-height: 1.5; }
 .conf-icone { font-size: 46px; color: var(--jaune); }
+.encart-lieu { margin-top: 12px; background: var(--carte); border: 1.5px solid var(--rose); border-radius: 12px; padding: 11px 13px; font-size: 12px; line-height: 1.7; }
+.resa-creneau { color: var(--bordeaux); }
 .encart-duree { margin-top: 14px; background: #FDF3C7; border: 1.5px solid var(--jaune); border-radius: 12px; padding: 11px 13px; font-size: 12px; line-height: 1.55; }
 .retraits { display: flex; gap: 8px; }
 .retrait { flex: 1; border: 1.5px solid var(--rose); background: var(--carte); border-radius: 12px; padding: 12px 8px; font-size: 12.5px; font-family: 'Poppins', sans-serif; line-height: 1.35; color: var(--encre); }
@@ -2161,6 +2259,54 @@ textarea.champ { resize: vertical; font-family: 'Poppins', sans-serif; }
 
 ReactDOM.createRoot(document.getElementById("racine")).render(<NathPointBrod />);
 
+  </script>
+
+  <style>
+    /* ---- curseur aiguille + points de broderie ---- */
+    @media (pointer: fine) {
+      body {
+        cursor: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMicgaGVpZ2h0PSczMic+PHBhdGggZD0nTTI3IDQgUTI5IDggMjUgMTEgUTIxIDkgMjMgNSBaJyBmaWxsPSdub25lJyBzdHJva2U9JyM2RDA3MUEnIHN0cm9rZS13aWR0aD0nMS42Jy8+PGxpbmUgeDE9JzI0JyB5MT0nNycgeDI9JzQnIHkyPScyNycgc3Ryb2tlPScjODQ4QjkzJyBzdHJva2Utd2lkdGg9JzMnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjxsaW5lIHgxPScyNCcgeTE9JzcnIHgyPSc0JyB5Mj0nMjcnIHN0cm9rZT0nI0M3Q0NEMScgc3Ryb2tlLXdpZHRoPScxLjEnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjxjaXJjbGUgY3g9JzIzLjUnIGN5PSc3LjUnIHI9JzIuNCcgZmlsbD0nbm9uZScgc3Ryb2tlPScjODQ4QjkzJyBzdHJva2Utd2lkdGg9JzEuNScvPjwvc3ZnPg==") 3 28, auto;
+      }
+    }
+    #fil-calque { position: fixed; inset: 0; pointer-events: none; z-index: 9998; overflow: hidden; }
+    .point-brod {
+      position: fixed; width: 11px; height: 0;
+      border-top: 2.5px solid #6D071A; border-radius: 2px; opacity: 0.85;
+      animation: pt-fondu 1.5s ease-out forwards;
+    }
+    @keyframes pt-fondu { 60% { opacity: 0.55; } 100% { opacity: 0; } }
+  </style>
+  <script>
+    (function () {
+      if (!window.matchMedia) return;
+      if (!matchMedia("(pointer: fine)").matches) return;
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      var calque = document.createElement("div");
+      calque.id = "fil-calque";
+      document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(calque); });
+      var px = null, py = null, distance = 0, nombre = 0;
+      var PAS = 16, MAXI = 130;
+      document.addEventListener("mousemove", function (e) {
+        if (px === null) { px = e.clientX; py = e.clientY; return; }
+        var vx = e.clientX - px, vy = e.clientY - py;
+        var d = Math.hypot(vx, vy);
+        if (d < 1) return;
+        distance += d;
+        if (distance >= PAS && calque.parentNode) {
+          distance = 0;
+          var pt = document.createElement("span");
+          pt.className = "point-brod";
+          pt.style.left = e.clientX + "px";
+          pt.style.top = e.clientY + "px";
+          pt.style.transform = "translate(-50%,-50%) rotate(" + (Math.atan2(vy, vx) * 180 / Math.PI) + "deg)";
+          calque.appendChild(pt);
+          nombre++;
+          if (nombre > MAXI && calque.firstChild) { calque.removeChild(calque.firstChild); nombre--; }
+          setTimeout(function () { if (pt.parentNode) { pt.parentNode.removeChild(pt); nombre--; } }, 1500);
+        }
+        px = e.clientX; py = e.clientY;
+      }, { passive: true });
+    })();
   </script>
 </body>
 </html>
