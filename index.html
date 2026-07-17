@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v14-creneaux" />
+  <meta name="version" content="v14b-historique" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -113,6 +113,7 @@ const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",
 const AUJOURDHUI = new Date().toISOString().slice(0, 10);
 const dateFR = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 const limiteResa = (ts) => new Date(ts + DUREE_RESA_JOURS * 86400000).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+const dateHeureFR = (ts) => new Date(ts).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) + " à " + new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
 const FONDS = ["#FDF3C7", "#FFE3EB"];
 
@@ -596,6 +597,7 @@ function NathPointBrod() {
 
   /* ---------- gestion ---------- */
   const [ongletG, setOngletG] = useState("creer");
+  const [resaVue, setResaVue] = useState("encours");
   const [sousEcran, setSousEcran] = useState("choix");
   const [etape, setEtape] = useState(0);
   const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
@@ -849,9 +851,9 @@ function NathPointBrod() {
       lot.update(db.collection("articles").doc(r.articleId),
         remise ? { statut: "vendu", canal: "Réservation" } : { statut: "publié" });
     }
-    lot.delete(db.collection("reservations").doc(r.id));
+    lot.update(db.collection("reservations").doc(r.id), { statut: remise ? "remise" : "annulée", traiteLe: Date.now() });
     lot.commit()
-      .then(() => montrerToast(remise ? "Pièce remise — vente enregistrée" : "Réservation annulée — pièce de retour en boutique"))
+      .then(() => montrerToast(remise ? "Pièce remise — vente enregistrée et archivée" : "Réservation annulée — pièce de retour en boutique"))
       .catch((e) => montrerToast("Erreur : " + e.message));
   };
 
@@ -1067,7 +1069,7 @@ function NathPointBrod() {
           </header>
           <div className="onglets-g">
             {[["creer", "✂️ Créer"], ["publier", "📸 Publier" + (enAttente.length ? " (" + enAttente.length + ")" : "")],
-              ["resa", "🎀 Résa (" + reservations.length + ")"], ["news", "💌 News"], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
+              ["resa", "🎀 Résa (" + reservations.filter((r) => !r.statut).length + ")"], ["news", "💌 News"], ["marches", "☀️ Marchés"], ["stock", "📦 Stock"]].map(([id, titre]) => (
               <button key={id} className={"onglet-g" + (ongletG === id ? " actif" : "")}
                 onClick={() => { setOngletG(id); setSousEcran("choix"); }}>{titre}</button>
             ))}
@@ -1504,29 +1506,48 @@ function NathPointBrod() {
           )}
 
           {/* ------ RÉSERVATIONS ------ */}
-          {ongletG === "resa" && (
-            <main className="contenu">
-              {reservations.length === 0 ? (
-                <div className="vide-msg">Aucune réservation en cours.</div>
-              ) : (
-                reservations.map((r) => (
-                  <div key={r.id} className="resa-carte">
-                    <div className="resa-article">{r.articleNom} · {eur(r.prix)} <span className="ref-badge">{r.articleRef}</span></div>
-                    <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
-                    <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
-                    <div className="resa-detail">📍 Retrait : {r.retrait}</div>
-                    {r.creneau && <div className="resa-detail resa-creneau">📅 Passage prévu : <strong>{dateFR(r.creneau.jour)} vers {r.creneau.heure}</strong></div>}
-                    <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
-                    <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
-                    <div className="resa-actions">
-                      <button className="btn-secondaire mini-btn" onClick={() => traiterResa(r, false)}>Annuler / remettre en boutique</button>
-                      <button className="btn-principal petit" onClick={() => traiterResa(r, true)}>Remise faite ✓</button>
+          {ongletG === "resa" && (() => {
+            const actives = reservations.filter((r) => !r.statut);
+            const historique = reservations.filter((r) => r.statut).sort((a, b) => (b.traiteLe || 0) - (a.traiteLe || 0));
+            const liste = resaVue === "encours" ? actives : historique;
+            return (
+              <main className="contenu">
+                <div className="chips" style={{ padding: "0 0 10px" }}>
+                  <button className={"chip" + (resaVue === "encours" ? " actif" : "")} onClick={() => setResaVue("encours")}>En cours ({actives.length})</button>
+                  <button className={"chip" + (resaVue === "historique" ? " actif" : "")} onClick={() => setResaVue("historique")}>Historique ({historique.length})</button>
+                </div>
+                {liste.length === 0 ? (
+                  <div className="vide-msg">{resaVue === "encours" ? "Aucune réservation en cours." : "Aucune réservation archivée pour l’instant."}</div>
+                ) : (
+                  liste.map((r) => (
+                    <div key={r.id} className={"resa-carte" + (r.statut ? " archive" : "")}>
+                      <div className="resa-article">{r.articleNom} · {eur(r.prix)} <span className="ref-badge">{r.articleRef}</span></div>
+                      {r.statut && (
+                        <div className={"resa-statut " + r.statut}>
+                          {r.statut === "remise" ? "✓ Remise et vendue" : "✕ Annulée"}{r.traiteLe ? " le " + dateHeureFR(r.traiteLe) : ""}
+                        </div>
+                      )}
+                      <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
+                      <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
+                      <div className="resa-detail">🕐 Réservée le {dateHeureFR(r.quand)}</div>
+                      <div className="resa-detail">📍 Retrait : {r.retrait}</div>
+                      {r.creneau && <div className="resa-detail resa-creneau">📅 Passage prévu : <strong>{dateFR(r.creneau.jour)} vers {r.creneau.heure}</strong></div>}
+                      {!r.statut && (
+                        <>
+                          <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
+                          <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
+                          <div className="resa-actions">
+                            <button className="btn-secondaire mini-btn" onClick={() => traiterResa(r, false)}>Annuler / remettre en boutique</button>
+                            <button className="btn-principal petit" onClick={() => traiterResa(r, true)}>Remise faite ✓</button>
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
-                ))
-              )}
-            </main>
-          )}
+                  ))
+                )}
+              </main>
+            );
+          })()}
 
           {/* ------ NEWS : POSTS & NEWSLETTER ------ */}
           {ongletG === "news" && (
@@ -2155,6 +2176,10 @@ const CSS = `
 .canal { border: 1.5px solid var(--bordeaux); background: var(--carte); color: var(--bordeaux); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; font-family: 'Poppins', sans-serif; }
 
 .resa-carte { background: var(--carte); border-left: 4px solid var(--jaune); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(109,7,26,0.06); }
+.resa-carte.archive { border-left-color: #D8D2C9; opacity: 0.85; }
+.resa-statut { font-size: 12px; font-weight: 600; border-radius: 8px; padding: 5px 9px; margin: 4px 0 6px; display: inline-block; }
+.resa-statut.remise { background: #EAF3DC; color: #3E6B4F; }
+.resa-statut.annulée { background: #FDECEC; color: var(--bordeaux); }
 .resa-article { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
 .resa-client { font-size: 13px; font-weight: 600; color: var(--bordeaux); }
 .resa-detail { font-size: 12px; color: #6E6366; margin-top: 2px; }
