@@ -56,7 +56,7 @@ const auth = firebase.auth();
 
 const VITESSE_BRODERIE = 600;
 const DUREE_RESA_JOURS = 7;
-const SERVICE_MAILS = "https://REMPLACE-MOI.vercel.app"; // adresse du projet Vercel d'envoi d'emails
+const SERVICE_MAILS = const SERVICE_MAILS = "https://nathpointbrod-mails.vercel.app";
 const ETAPES = ["Pièce", "Tissu", "Access.", "Broderie", "Charges", "Prix"];
 
 const eur = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2).replace(".", ",") + " €";
