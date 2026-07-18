@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v14d-semaines" />
+  <meta name="version" content="v15-supports" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -121,6 +121,12 @@ const FONDS = ["#FDF3C7", "#FFE3EB"];
 const CONFIG_DEFAUT = {
   categories: ["Bébé & Bain", "Naissance", "Pochettes & Sacs", "Cuisine", "Maison"],
   tissus: [],
+  supports: [
+    { nom: "Tee-shirt", prix: 5.0 },
+    { nom: "Body bébé", prix: 4.0 },
+    { nom: "Drap de bain", prix: 9.0 },
+    { nom: "Torchon plat", prix: 3.0 },
+  ],
   accessoires: [
     { nom: "Élastique", mode: "metre", prix: 1.2, largeur: 2 },
     { nom: "Boucle", mode: "piece", prix: 0.5 },
@@ -534,6 +540,7 @@ function NathPointBrod() {
   /* ---------- réglages (référentiels) ---------- */
   const [categories, setCategories] = useState(CONFIG_DEFAUT.categories);
   const [tissusRef, setTissusRef] = useState(CONFIG_DEFAUT.tissus);
+  const [supportsRef, setSupportsRef] = useState(CONFIG_DEFAUT.supports);
   const [accRef, setAccRef] = useState(CONFIG_DEFAUT.accessoires);
   const [intisseRef, setIntisseRef] = useState(CONFIG_DEFAUT.intisses);
   const [bobinesRef, setBobinesRef] = useState(CONFIG_DEFAUT.bobines);
@@ -549,6 +556,7 @@ function NathPointBrod() {
       const c = s.data();
       if (c.categories) setCategories(c.categories);
       if (c.tissus) setTissusRef(c.tissus);
+      if (c.supports) setSupportsRef(c.supports);
       if (c.accessoires) {
         let acc = c.accessoires;
         if (acc.some((a) => a.nom.toLowerCase().includes("fermeture") && a.mode === "piece")) {
@@ -620,6 +628,9 @@ function NathPointBrod() {
   const [categorie, setCategorie] = useState(CONFIG_DEFAUT.categories[0]);
   const [dimsArticle, setDimsArticle] = useState("");
   const [tissuNom, setTissuNom] = useState("");
+  const [baseMode, setBaseMode] = useState("tissu");
+  const [supportNom, setSupportNom] = useState("");
+  const [formSupport, setFormSupport] = useState(null);
   const [dims, setDims] = useState({ largeur: 40, hauteur: 26 });
   const [accUsage, setAccUsage] = useState({});
   const [brod, setBrod] = useState({ bobine: "Bobine 1000 m", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
@@ -634,6 +645,8 @@ function NathPointBrod() {
   const tissuSel = tissusRef.find((t) => t.nom === tissuNom) || tissusRef[0];
   const surfaceM2 = ((dims.largeur || 0) / 100) * ((dims.hauteur || 0) / 100);
   const coutTissu = tissuSel ? surfaceM2 * (tissuSel.prixMetre / (tissuSel.laize / 100)) : 0;
+  const supportSel = supportsRef.find((s) => s.nom === supportNom) || supportsRef[0];
+  const coutBase = baseMode === "support" ? (supportSel ? Number(supportSel.prix) || 0 : 0) : coutTissu;
   const coutAccessoires = Object.entries(accUsage).reduce((s, [nom, q]) => {
     const a = accRef.find((x) => x.nom === nom);
     return !a || !q ? s : s + (a.mode === "piece" ? q * a.prix : (q / 100) * a.prix);
@@ -653,7 +666,7 @@ function NathPointBrod() {
   const heures = minutesTotal / 60;
   const coutSalaire = heures * (charges.salaire || 0);
   const coutMachine = heures * ((charges.electricite || 0) + (charges.usure || 0));
-  const coutRevient = coutTissu + coutAccessoires + coutFil + coutIntisses + coutSalaire + coutMachine;
+  const coutRevient = coutBase + coutAccessoires + coutFil + coutIntisses + coutSalaire + coutMachine;
   const prixAvantUrssaf = margePct < 100 ? coutRevient / (1 - margePct / 100) : coutRevient;
   const prixFinal = urssafPct < 100 ? prixAvantUrssaf / (1 - urssafPct / 100) : prixAvantUrssaf;
   const montantUrssaf = prixFinal * (urssafPct / 100);
@@ -669,6 +682,7 @@ function NathPointBrod() {
   const nouvellePiece = () => {
     setNomPiece(""); setCategorie(categories[0]); setDimsArticle("");
     setTissuNom(tissusRef[0] ? tissusRef[0].nom : ""); setDims({ largeur: 40, hauteur: 26 });
+    setBaseMode("tissu"); setSupportNom(supportsRef[0] ? supportsRef[0].nom : ""); setFormSupport(null);
     setAccUsage({}); setIntisseUsage({});
     setBrod({ bobine: bobinesRef[0] ? bobinesRef[0].nom : "", points: 8000, largeur: 8, hauteur: 6, consoSup: 5, consoCan: 3.5 });
     setEtape(0); setSousEcran("assistant");
@@ -678,6 +692,7 @@ function NathPointBrod() {
     setNomPiece(p.nom); setCategorie(p.categorie); setDimsArticle(p.dims || "");
     if (p.chiffrage) {
       setTissuNom(p.chiffrage.tissuNom); setDims({ ...p.chiffrage.dims });
+      setBaseMode(p.chiffrage.baseMode || "tissu"); setSupportNom(p.chiffrage.supportNom || (supportsRef[0] ? supportsRef[0].nom : ""));
       setAccUsage({ ...p.chiffrage.accUsage }); setIntisseUsage({ ...p.chiffrage.intisseUsage });
       setBrod({ ...p.chiffrage.brod }); setMargePct(p.chiffrage.margePct || 40);
     }
@@ -690,8 +705,8 @@ function NathPointBrod() {
     db.collection("articles").add({
       ref, statut: "attente", photo: null, emoji: "🧵", fond: FONDS[articles.length % 2],
       nom: nomPiece || "Pièce sans nom", categorie, dims: dimsArticle || "—",
-      tissu: tissuSel ? tissuSel.nom : "", prix: Math.round(prixFinal * 10) / 10,
-      chiffrage: { tissuNom, dims, accUsage, intisseUsage, brod, margePct }, cree: Date.now(),
+      tissu: baseMode === "support" ? (supportSel ? supportSel.nom : "") : (tissuSel ? tissuSel.nom : ""), prix: Math.round(prixFinal * 10) / 10,
+      chiffrage: { tissuNom, dims, accUsage, intisseUsage, brod, margePct, baseMode, supportNom }, cree: Date.now(),
     }).then(() => {
       montrerToast("« " + (nomPiece || "Pièce") + " » pré-enregistrée — réf. " + ref);
       setSousEcran("choix"); setOngletG("publier");
@@ -1160,6 +1175,55 @@ function NathPointBrod() {
 
               {etape === 1 && (
                 <section>
+                  <label className="label">Base de la pièce</label>
+                  <div className="choix-grille">
+                    <button className={"choix-case" + (baseMode === "tissu" ? " choisi" : "")} onClick={() => setBaseMode("tissu")}>🧵 Tissu au mètre</button>
+                    <button className={"choix-case" + (baseMode === "support" ? " choisi" : "")} onClick={() => { setBaseMode("support"); if (!supportNom && supportsRef[0]) setSupportNom(supportsRef[0].nom); }}>👕 Support tout prêt</button>
+                  </div>
+                  {baseMode === "support" && (
+                    <>
+                      <p className="aide">Une pièce achetée toute faite que tu brodes : tee-shirt, body, drap de bain, torchon…</p>
+                      <label className="label">Support utilisé</label>
+                      <div className="choix-grille">
+                        {supportsRef.map((s) => (
+                          <span key={s.nom} className={"choix-case avec-suppr" + (supportNom === s.nom ? " choisi" : "")} onClick={() => setSupportNom(s.nom)}>
+                            {s.nom}
+                            <button className="mini-suppr" aria-label="Supprimer" onClick={(ev) => {
+                              ev.stopPropagation();
+                              if (!window.confirm("Supprimer le support « " + s.nom + " » de la liste ?")) return;
+                              const next = supportsRef.filter((x) => x.nom !== s.nom);
+                              setSupportsRef(next); persister("supports", next);
+                              if (supportNom === s.nom) setSupportNom(next[0] ? next[0].nom : "");
+                            }}>✕</button>
+                          </span>
+                        ))}
+                        <button className="choix-case ajout" onClick={() => setFormSupport(formSupport ? null : { nom: "", prix: "" })}>+ Nouveau support</button>
+                      </div>
+                      {formSupport && (
+                        <div className="ajout-form colonne">
+                          <input className="champ" placeholder="Nom du support (ex. Bavoir, Sweat…)" autoFocus value={formSupport.nom}
+                            onChange={(e) => setFormSupport({ ...formSupport, nom: e.target.value })} />
+                          <Champ label="Prix d'achat" suffixe="€ / pièce" type="number" inputMode="decimal" step="0.10" value={formSupport.prix}
+                            onChange={(e) => setFormSupport({ ...formSupport, prix: +e.target.value })} />
+                          <button className="btn-principal petit" onClick={() => {
+                            if (!formSupport.nom.trim() || !formSupport.prix) return;
+                            const next = [...supportsRef, { nom: formSupport.nom.trim(), prix: +formSupport.prix }];
+                            setSupportsRef(next); persister("supports", next);
+                            setSupportNom(formSupport.nom.trim()); setFormSupport(null);
+                          }}>Ajouter le support</button>
+                        </div>
+                      )}
+                      {supportSel && (
+                        <Champ label={"Prix d'achat — " + supportSel.nom} suffixe="€ / pièce" type="number" inputMode="decimal" step="0.10"
+                          value={supportSel.prix} onChange={(e) => {
+                            const next = supportsRef.map((s) => s.nom === supportSel.nom ? { ...s, prix: +e.target.value } : s);
+                            setSupportsRef(next); persister("supports", next);
+                          }} />
+                      )}
+                      <div className="sous-total">Support : <strong>{eur(coutBase)}</strong></div>
+                    </>
+                  )}
+                  {baseMode === "tissu" && (<>
                   <label className="label">Tissu utilisé</label>
                   <div className="choix-grille">
                     {tissusRef.map((t) => (
@@ -1218,6 +1282,7 @@ function NathPointBrod() {
                     <span className="suffixe">cm — le calcul se fait tout seul</span>
                   </div>
                   <div className="sous-total">Tissu : <strong>{eur(coutTissu)}</strong></div>
+                  </>)}
                 </section>
               )}
 
