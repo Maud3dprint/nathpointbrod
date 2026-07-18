@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v14b-historique" />
+  <meta name="version" content="v14d-semaines" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -450,7 +450,7 @@ function Logo({ petit }) {
         </g>
       </svg>
       <div className="logo-script">Nath Point <span className="logo-brod">Brod</span><span className="smiley">☺</span></div>
-      <div className="logo-artisan">A R T I S A N &nbsp; D ’ A R T</div>
+      <div className="logo-artisan">Une broderie pour chaque envie</div>
     </div>
   );
 }
@@ -1050,7 +1050,7 @@ function NathPointBrod() {
           </main>
 
           <footer className="pied">
-            Retrait en atelier à Rossillon ou en magasin à Belley.<br />Nath Point Brod — artisan d’art ☺<br />
+            Retrait en atelier à Rossillon ou en magasin à Belley.<br />Nath Point Brod — une broderie pour chaque envie ☺<br />
             <button className="lien-mentions" onClick={() => setMentionsOuvertes(true)}>Mentions légales & confidentialité</button>
           </footer>
         </>
@@ -1509,41 +1509,67 @@ function NathPointBrod() {
           {ongletG === "resa" && (() => {
             const actives = reservations.filter((r) => !r.statut);
             const historique = reservations.filter((r) => r.statut).sort((a, b) => (b.traiteLe || 0) - (a.traiteLe || 0));
-            const liste = resaVue === "encours" ? actives : historique;
+            const debutSemaine = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); };
+            const semaines = [];
+            historique.forEach((r) => {
+              const cle = debutSemaine(r.traiteLe || r.quand);
+              let s = semaines.find((x) => x.cle === cle);
+              if (!s) { s = { cle, liste: [] }; semaines.push(s); }
+              s.liste.push(r);
+            });
+            semaines.sort((a, b) => b.cle - a.cle);
+            const jourCourt = (ts) => new Date(ts).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+            const carteResa = (r) => (
+              <div key={r.id} className={"resa-carte" + (r.statut ? " archive" : "")}>
+                <div className="resa-article">{r.articleNom} · {eur(r.prix)} <span className="ref-badge">{r.articleRef}</span></div>
+                {r.statut && (
+                  <div className={"resa-statut " + r.statut}>
+                    {r.statut === "remise" ? "✓ Remise et vendue" : "✕ Annulée"}{r.traiteLe ? " le " + dateHeureFR(r.traiteLe) : ""}
+                  </div>
+                )}
+                <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
+                <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
+                <div className="resa-detail">🕐 Réservée le {dateHeureFR(r.quand)}</div>
+                <div className="resa-detail">📍 Retrait : {r.retrait}</div>
+                {r.creneau && <div className="resa-detail resa-creneau">📅 Passage prévu : <strong>{dateFR(r.creneau.jour)} vers {r.creneau.heure}</strong></div>}
+                {!r.statut && (
+                  <>
+                    <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
+                    <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
+                    <div className="resa-actions">
+                      <button className="btn-secondaire mini-btn" onClick={() => traiterResa(r, false)}>Annuler / remettre en boutique</button>
+                      <button className="btn-principal petit" onClick={() => traiterResa(r, true)}>Remise faite ✓</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
             return (
               <main className="contenu">
                 <div className="chips" style={{ padding: "0 0 10px" }}>
                   <button className={"chip" + (resaVue === "encours" ? " actif" : "")} onClick={() => setResaVue("encours")}>En cours ({actives.length})</button>
                   <button className={"chip" + (resaVue === "historique" ? " actif" : "")} onClick={() => setResaVue("historique")}>Historique ({historique.length})</button>
                 </div>
-                {liste.length === 0 ? (
-                  <div className="vide-msg">{resaVue === "encours" ? "Aucune réservation en cours." : "Aucune réservation archivée pour l’instant."}</div>
+                {resaVue === "encours" ? (
+                  actives.length === 0
+                    ? <div className="vide-msg">Aucune réservation en cours.</div>
+                    : actives.map(carteResa)
                 ) : (
-                  liste.map((r) => (
-                    <div key={r.id} className={"resa-carte" + (r.statut ? " archive" : "")}>
-                      <div className="resa-article">{r.articleNom} · {eur(r.prix)} <span className="ref-badge">{r.articleRef}</span></div>
-                      {r.statut && (
-                        <div className={"resa-statut " + r.statut}>
-                          {r.statut === "remise" ? "✓ Remise et vendue" : "✕ Annulée"}{r.traiteLe ? " le " + dateHeureFR(r.traiteLe) : ""}
-                        </div>
-                      )}
-                      <div className="resa-client">👤 {r.prenom} {r.nomF}</div>
-                      <div className="resa-detail">📞 {r.tel} · ✉️ {r.email}</div>
-                      <div className="resa-detail">🕐 Réservée le {dateHeureFR(r.quand)}</div>
-                      <div className="resa-detail">📍 Retrait : {r.retrait}</div>
-                      {r.creneau && <div className="resa-detail resa-creneau">📅 Passage prévu : <strong>{dateFR(r.creneau.jour)} vers {r.creneau.heure}</strong></div>}
-                      {!r.statut && (
-                        <>
-                          <div className="resa-detail">⏳ Mise de côté jusqu’au {limiteResa(r.quand)}{Date.now() > r.dateLimite && " — délai dépassé"}</div>
-                          <div className="resa-detail">{r.nlOk ? "💌 OK newsletter" : "— Ne souhaite pas la newsletter"}</div>
-                          <div className="resa-actions">
-                            <button className="btn-secondaire mini-btn" onClick={() => traiterResa(r, false)}>Annuler / remettre en boutique</button>
-                            <button className="btn-principal petit" onClick={() => traiterResa(r, true)}>Remise faite ✓</button>
+                  semaines.length === 0
+                    ? <div className="vide-msg">Aucune réservation archivée pour l’instant.</div>
+                    : semaines.map((s) => {
+                        const ventes = s.liste.filter((r) => r.statut === "remise");
+                        const total = ventes.reduce((somme, r) => somme + (Number(r.prix) || 0), 0);
+                        return (
+                          <div key={s.cle}>
+                            <div className="semaine-titre">
+                              <span>Semaine du {jourCourt(s.cle)} au {jourCourt(s.cle + 6 * 86400000)}</span>
+                              <span className="semaine-total">{ventes.length} vendue{ventes.length > 1 ? "s" : ""} · {eur(total)}</span>
+                            </div>
+                            {s.liste.map(carteResa)}
                           </div>
-                        </>
-                      )}
-                    </div>
-                  ))
+                        );
+                      })
                 )}
               </main>
             );
@@ -2052,7 +2078,7 @@ const CSS = `
 .logo-script { font-family: 'Caveat', cursive; font-size: 38px; font-weight: 600; color: var(--encre); line-height: 1; }
 .logo-brod { color: var(--bordeaux); font-weight: 700; }
 .smiley { color: var(--jaune); font-size: 26px; vertical-align: super; margin-left: 2px; }
-.logo-artisan { font-size: 9px; letter-spacing: 3px; color: var(--bordeaux); margin-top: 4px; font-weight: 400; }
+.logo-artisan { font-size: 10px; letter-spacing: 0.6px; color: var(--bordeaux); margin-top: 4px; font-style: italic; }
 .barre-session { display: flex; gap: 14px; justify-content: center; align-items: center; font-size: 11px; color: #8B8082; margin-top: 4px; flex-wrap: wrap; }
 
 .bandeau { margin: 10px 14px; font-size: 12.5px; line-height: 1.55; background: var(--rose-pale); border-radius: 14px; padding: 12px 16px; text-align: center; }
@@ -2180,6 +2206,9 @@ const CSS = `
 .resa-statut { font-size: 12px; font-weight: 600; border-radius: 8px; padding: 5px 9px; margin: 4px 0 6px; display: inline-block; }
 .resa-statut.remise { background: #EAF3DC; color: #3E6B4F; }
 .resa-statut.annulée { background: #FDECEC; color: var(--bordeaux); }
+.semaine-titre { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 2px dashed var(--bordeaux); font-size: 13px; font-weight: 700; color: var(--bordeaux); }
+.semaine-titre:first-child { margin-top: 2px; }
+.semaine-total { font-size: 12px; font-weight: 600; background: #FDF3C7; border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
 .resa-article { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
 .resa-client { font-size: 13px; font-weight: 600; color: var(--bordeaux); }
 .resa-detail { font-size: 12px; color: #6E6366; margin-top: 2px; }
@@ -2293,45 +2322,6 @@ ReactDOM.createRoot(document.getElementById("racine")).render(<NathPointBrod />)
         cursor: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMicgaGVpZ2h0PSczMic+PHBhdGggZD0nTTI3IDQgUTI5IDggMjUgMTEgUTIxIDkgMjMgNSBaJyBmaWxsPSdub25lJyBzdHJva2U9JyM2RDA3MUEnIHN0cm9rZS13aWR0aD0nMS42Jy8+PGxpbmUgeDE9JzI0JyB5MT0nNycgeDI9JzQnIHkyPScyNycgc3Ryb2tlPScjODQ4QjkzJyBzdHJva2Utd2lkdGg9JzMnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjxsaW5lIHgxPScyNCcgeTE9JzcnIHgyPSc0JyB5Mj0nMjcnIHN0cm9rZT0nI0M3Q0NEMScgc3Ryb2tlLXdpZHRoPScxLjEnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjxjaXJjbGUgY3g9JzIzLjUnIGN5PSc3LjUnIHI9JzIuNCcgZmlsbD0nbm9uZScgc3Ryb2tlPScjODQ4QjkzJyBzdHJva2Utd2lkdGg9JzEuNScvPjwvc3ZnPg==") 3 28, auto;
       }
     }
-    #fil-calque { position: fixed; inset: 0; pointer-events: none; z-index: 9998; overflow: hidden; }
-    .point-brod {
-      position: fixed; width: 11px; height: 0;
-      border-top: 2.5px solid #6D071A; border-radius: 2px; opacity: 0.85;
-      animation: pt-fondu 1.5s ease-out forwards;
-    }
-    @keyframes pt-fondu { 60% { opacity: 0.55; } 100% { opacity: 0; } }
   </style>
-  <script>
-    (function () {
-      if (!window.matchMedia) return;
-      if (!matchMedia("(pointer: fine)").matches) return;
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      var calque = document.createElement("div");
-      calque.id = "fil-calque";
-      document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(calque); });
-      var px = null, py = null, distance = 0, nombre = 0;
-      var PAS = 16, MAXI = 130;
-      document.addEventListener("mousemove", function (e) {
-        if (px === null) { px = e.clientX; py = e.clientY; return; }
-        var vx = e.clientX - px, vy = e.clientY - py;
-        var d = Math.hypot(vx, vy);
-        if (d < 1) return;
-        distance += d;
-        if (distance >= PAS && calque.parentNode) {
-          distance = 0;
-          var pt = document.createElement("span");
-          pt.className = "point-brod";
-          pt.style.left = e.clientX + "px";
-          pt.style.top = e.clientY + "px";
-          pt.style.transform = "translate(-50%,-50%) rotate(" + (Math.atan2(vy, vx) * 180 / Math.PI) + "deg)";
-          calque.appendChild(pt);
-          nombre++;
-          if (nombre > MAXI && calque.firstChild) { calque.removeChild(calque.firstChild); nombre--; }
-          setTimeout(function () { if (pt.parentNode) { pt.parentNode.removeChild(pt); nombre--; } }, 1500);
-        }
-        px = e.clientX; py = e.clientY;
-      }, { passive: true });
-    })();
-  </script>
-</body>
+  </body>
 </html>
