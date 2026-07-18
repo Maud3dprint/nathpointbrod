@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v15b-tiroirs" />
+  <meta name="version" content="v16-vacances" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -98,11 +98,12 @@ const heuresDispo = (lieu, d) => {
   });
   return res;
 };
-const joursDispo = (lieu) => {
+const joursDispo = (lieu, vac) => {
   const arr = [];
   const ajd = new Date();
   for (let i = 0; i < 8 && arr.length < 6; i++) {
     const d = new Date(ajd.getFullYear(), ajd.getMonth(), ajd.getDate() + i);
+    if (vac && isoLocal(d) >= vac.debut && isoLocal(d) <= vac.fin) continue; // congés : jour fermé
     if (heuresDispo(lieu, d).length) arr.push(d);
   }
   return arr;
@@ -610,6 +611,7 @@ function NathPointBrod() {
   const [sousEcran, setSousEcran] = useState("choix");
   const [etape, setEtape] = useState(0);
   const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
+  const [nvVac, setNvVac] = useState({ debut: "", fin: "" });
   const [recherche, setRecherche] = useState("");
   const [canalPour, setCanalPour] = useState(null);
   const [contacts, setContacts] = useState([]);
@@ -821,6 +823,7 @@ function NathPointBrod() {
     if (!form.nomF.trim() || !form.prenom.trim() || !form.tel.trim() || !form.email.includes("@")) {
       setErreur("Merci de remplir nom, prénom, téléphone et email."); return;
     }
+    if (enVacances) { setErreur("Les réservations sont en pause pendant les congés de l'atelier — à très vite !"); return; }
     if (!form.retrait) { setErreur("Choisissez un lieu de retrait."); return; }
     if (!form.creneauJour || !form.creneauHeure) { setErreur("Choisissez le jour et l'heure de votre passage."); return; }
     setEnvoiEnCours(true);
@@ -978,7 +981,10 @@ function NathPointBrod() {
   const publies = articles.filter((a) => a.statut === "publié" || a.statut === "réservé");
   const catsBoutique = ["Tout", ...new Set(publies.map((a) => a.categorie))];
   const visibles = filtre === "Tout" ? publies : publies.filter((a) => a.categorie === filtre);
-  const marchesAVenir = marches.filter((m) => m.date >= AUJOURDHUI).sort((a, b) => a.date.localeCompare(b.date));
+  const marchesAVenir = marches.filter((m) => m.type !== "vacances" && m.date >= AUJOURDHUI).sort((a, b) => a.date.localeCompare(b.date));
+  const vacances = marches.find((m) => m.type === "vacances" && m.fin >= AUJOURDHUI) || null;
+  const enVacances = !!(vacances && vacances.debut <= AUJOURDHUI);
+  const reprise = vacances ? new Date(new Date(vacances.fin + "T12:00:00").getTime() + 86400000) : null;
   const enAttente = articles.filter((a) => a.statut === "attente");
 
   /* ================================================================ */
@@ -1017,6 +1023,15 @@ function NathPointBrod() {
             Réservez-la : elle est <strong>mise de côté 1 semaine</strong>, sans paiement en ligne.
           </div>
 
+          {vacances && (
+            <div className="bandeau-vacances">
+              {enVacances ? (
+                <>🌴 <strong>L’atelier fait une petite pause jusqu’au {dateFR(vacances.fin)}</strong> — les réservations en ligne reprennent le {reprise && dateFR(isoLocal(reprise))}. En attendant, retrouvez plein de pièces Nath Point Brod à <strong>La Grande Louve</strong>, boutique d’artisans créateurs, 41 Grande Rue à Belley ☺</>
+              ) : (
+                <>🌴 L’atelier sera en pause du <strong>{dateFR(vacances.debut)}</strong> au <strong>{dateFR(vacances.fin)}</strong> — les retraits reprendront ensuite. Pendant les congés, retrouvez les pièces Nath Point Brod à <strong>La Grande Louve</strong>, 41 Grande Rue à Belley ☺</>
+              )}
+            </div>
+          )}
           {marchesAVenir.length > 0 && (
             <div className="marches-bloc">
               <div className="marches-titre">☀️ Retrouvez-nous prochainement</div>
@@ -1770,6 +1785,42 @@ function NathPointBrod() {
           {/* ------ MARCHÉS ------ */}
           {ongletG === "marches" && (
             <main className="contenu">
+              <div className="carte-vacances">
+                <div className="marches-titre">🌴 Congés de l’atelier</div>
+                {vacances ? (
+                  <>
+                    <p className="aide">Pause du <strong>{dateFR(vacances.debut)}</strong> au <strong>{dateFR(vacances.fin)}</strong> — les réservations sont bloquées sur ces dates et la boutique affiche le message qui renvoie vers La Grande Louve.</p>
+                    <button className="btn-secondaire mini-btn" onClick={() => {
+                      db.collection("marches").doc("vacances").delete()
+                        .then(() => montrerToast("Congés terminés — réservations rouvertes"))
+                        .catch((e) => montrerToast("Erreur : " + e.message));
+                    }}>Terminer / annuler les congés</button>
+                  </>
+                ) : (
+                  <>
+                    <p className="aide">Tu pars ? Indique tes dates : les clientes ne pourront pas réserver de retrait sur cette période, et la boutique les invitera à passer à La Grande Louve.</p>
+                    <div className="deux-cols">
+                      <div className="champ-bloc">
+                        <label className="label">Premier jour</label>
+                        <input className="champ" type="date" value={nvVac.debut}
+                          onChange={(e) => setNvVac({ ...nvVac, debut: e.target.value })} />
+                      </div>
+                      <div className="champ-bloc">
+                        <label className="label">Dernier jour</label>
+                        <input className="champ" type="date" value={nvVac.fin}
+                          onChange={(e) => setNvVac({ ...nvVac, fin: e.target.value })} />
+                      </div>
+                    </div>
+                    <button className="btn-principal petit" onClick={() => {
+                      if (!nvVac.debut || !nvVac.fin) { montrerToast("Indique le premier et le dernier jour"); return; }
+                      if (nvVac.fin < nvVac.debut) { montrerToast("Le dernier jour doit être après le premier ☺"); return; }
+                      db.collection("marches").doc("vacances").set({ type: "vacances", date: nvVac.debut, debut: nvVac.debut, fin: nvVac.fin })
+                        .then(() => { setNvVac({ debut: "", fin: "" }); montrerToast("Congés enregistrés — la boutique est prévenue"); })
+                        .catch((e) => montrerToast("Erreur : " + e.message));
+                    }}>Enregistrer mes congés</button>
+                  </>
+                )}
+              </div>
               <p className="aide">Vos marchés s’affichent sur la boutique et disparaissent tout seuls une fois la date passée.</p>
               <div className="deux-cols">
                 <div className="champ-bloc">
@@ -1789,7 +1840,7 @@ function NathPointBrod() {
                   .then(() => { setNvMarche({ date: "", lieu: "" }); montrerToast("Marché ajouté — visible sur la boutique"); })
                   .catch((e) => montrerToast("Erreur : " + e.message));
               }}>Ajouter ce marché</button>
-              {[...marches].sort((a, b) => b.date.localeCompare(a.date)).map((m) => {
+              {[...marches].filter((m) => m.type !== "vacances").sort((a, b) => b.date.localeCompare(a.date)).map((m) => {
                 const passe = m.date < AUJOURDHUI;
                 return (
                   <div key={m.id} className={"ligne" + (passe ? " passe" : "")}>
@@ -1885,7 +1936,11 @@ function NathPointBrod() {
                 </div>
                 <div className="panneau-pied">
                   <span className="prix grand">{eur(fiche.prix)}</span>
-                  <button className="btn-principal petit" onClick={() => setResaPour(fiche)}>Réserver cette pièce</button>
+                  {enVacances ? (
+                    <div className="fiche-vacances">🌴 Les réservations reprennent le {reprise && dateFR(isoLocal(reprise))} — en attendant, retrouvez nos pièces à La Grande Louve, 41 Grande Rue à Belley ☺</div>
+                  ) : (
+                    <button className="btn-principal petit" onClick={() => setResaPour(fiche)}>Réserver cette pièce</button>
+                  )}
                 </div>
                 <p className="note-resa">
                   Réservation gratuite : la pièce est <strong>mise de côté 1 semaine</strong> à compter d’aujourd’hui.
@@ -1930,7 +1985,7 @@ function NathPointBrod() {
               </div>
               {form.retrait && (() => {
                 const lieu = LIEUX[form.retrait];
-                const jours = joursDispo(lieu);
+                const jours = joursDispo(lieu, vacances);
                 const jourSel = jours.find((d) => isoLocal(d) === form.creneauJour);
                 return (
                   <>
@@ -2167,6 +2222,9 @@ const CSS = `
 
 .bandeau { margin: 10px 14px; font-size: 12.5px; line-height: 1.55; background: var(--rose-pale); border-radius: 14px; padding: 12px 16px; text-align: center; }
 .marches-bloc { margin: 0 14px 6px; background: var(--carte); border: 2px solid var(--jaune); border-radius: 14px; padding: 12px 16px; }
+.bandeau-vacances { margin: 0 14px 10px; background: #FDF3C7; border: 2px solid var(--jaune); border-radius: 14px; padding: 12px 16px; font-size: 13px; line-height: 1.6; }
+.fiche-vacances { background: #FDF3C7; border-radius: 10px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; }
+.carte-vacances { background: var(--carte); border: 1.5px solid var(--jaune); border-radius: 14px; padding: 13px 15px; margin-bottom: 14px; }
 .marches-titre { font-size: 12px; font-weight: 600; color: var(--bordeaux); margin-bottom: 6px; }
 .marche-ligne { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; gap: 10px; }
 .marche-date { text-transform: capitalize; }
