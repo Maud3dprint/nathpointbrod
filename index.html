@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v15-supports" />
+  <meta name="version" content="v15b-tiroirs" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -606,6 +606,7 @@ function NathPointBrod() {
   /* ---------- gestion ---------- */
   const [ongletG, setOngletG] = useState("creer");
   const [resaVue, setResaVue] = useState("encours");
+  const [resaOuvertes, setResaOuvertes] = useState({});
   const [sousEcran, setSousEcran] = useState("choix");
   const [etape, setEtape] = useState(0);
   const [nvMarche, setNvMarche] = useState({ date: "", lieu: "" });
@@ -1622,16 +1623,34 @@ function NathPointBrod() {
                 ) : (
                   semaines.length === 0
                     ? <div className="vide-msg">Aucune réservation archivée pour l’instant.</div>
-                    : semaines.map((s) => {
+                    : semaines.map((s, idx) => {
                         const ventes = s.liste.filter((r) => r.statut === "remise");
+                        const annulees = s.liste.filter((r) => r.statut !== "remise");
                         const total = ventes.reduce((somme, r) => somme + (Number(r.prix) || 0), 0);
+                        const ouverte = resaOuvertes[s.cle] !== undefined ? resaOuvertes[s.cle] : idx === 0;
                         return (
-                          <div key={s.cle}>
-                            <div className="semaine-titre">
-                              <span>Semaine du {jourCourt(s.cle)} au {jourCourt(s.cle + 6 * 86400000)}</span>
+                          <div key={s.cle} className="semaine-tiroir">
+                            <button className="semaine-titre" onClick={() => setResaOuvertes({ ...resaOuvertes, [s.cle]: !ouverte })}>
+                              <span className="chevron">{ouverte ? "▾" : "▸"}</span>
+                              <span className="semaine-nom">Semaine du {jourCourt(s.cle)} au {jourCourt(s.cle + 6 * 86400000)}</span>
                               <span className="semaine-total">{ventes.length} vendue{ventes.length > 1 ? "s" : ""} · {eur(total)}</span>
-                            </div>
-                            {s.liste.map(carteResa)}
+                            </button>
+                            {ouverte && (
+                              <div className="semaine-contenu">
+                                {ventes.length > 0 && (
+                                  <>
+                                    <div className="sous-groupe vendues">✓ Vendues ({ventes.length})</div>
+                                    {ventes.map(carteResa)}
+                                  </>
+                                )}
+                                {annulees.length > 0 && (
+                                  <>
+                                    <div className="sous-groupe annulations">✕ Annulations ({annulees.length})</div>
+                                    {annulees.map(carteResa)}
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })
@@ -2271,9 +2290,17 @@ const CSS = `
 .resa-statut { font-size: 12px; font-weight: 600; border-radius: 8px; padding: 5px 9px; margin: 4px 0 6px; display: inline-block; }
 .resa-statut.remise { background: #EAF3DC; color: #3E6B4F; }
 .resa-statut.annulée { background: #FDECEC; color: var(--bordeaux); }
-.semaine-titre { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 2px dashed var(--bordeaux); font-size: 13px; font-weight: 700; color: var(--bordeaux); }
-.semaine-titre:first-child { margin-top: 2px; }
+.semaine-tiroir { background: var(--carte); border: 1.5px solid #EBE4DA; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.semaine-titre { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: none; padding: 12px 13px; font-size: 13px; font-weight: 700; color: var(--bordeaux); cursor: pointer; font-family: inherit; }
+.semaine-titre:active { background: #FBF7F0; }
+.chevron { font-size: 13px; width: 14px; flex: none; }
+.semaine-nom { flex: 1; }
 .semaine-total { font-size: 12px; font-weight: 600; background: #FDF3C7; border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
+.semaine-contenu { padding: 2px 10px 10px; }
+.semaine-contenu .resa-carte { box-shadow: none; border: 1px solid #F0EAE1; }
+.sous-groupe { font-size: 11.5px; font-weight: 700; letter-spacing: 0.4px; margin: 10px 2px 6px; text-transform: uppercase; }
+.sous-groupe.vendues { color: #3E6B4F; }
+.sous-groupe.annulations { color: var(--bordeaux); }
 .resa-article { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
 .resa-client { font-size: 13px; font-weight: 600; color: var(--bordeaux); }
 .resa-detail { font-size: 12px; color: #6E6366; margin-top: 2px; }
