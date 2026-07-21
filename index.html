@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6D071A" />
-  <meta name="version" content="v16-vacances" />
+  <meta name="version" content="v16b-photos" />
   <meta name="description" content="Nath Point Brod - broderie personnalisee, artisan d'art. Pieces uniques a reserver, retrait en atelier a Rossillon ou en magasin a Belley." />
   <meta property="og:title" content="Nath Point Brod — broderie personnalisée" />
   <meta property="og:description" content="Une broderie pour chaque envie ☺ Pièces uniques faites main, à réserver en ligne sans paiement. Retrait à Rossillon ou à La Grande Louve à Belley." />
@@ -167,6 +167,7 @@ const compresserPhoto = (fichier) => new Promise((resoudre, rejeter) => {
     const k = Math.min(cote / img.width, cote / img.height);
     const w = img.width * k, h = img.height * k;
     ctx.drawImage(img, (cote - w) / 2, (cote - h) / 2, w, h);
+    try { ameliorerPhoto(ctx, cote); } catch (e) { /* photo inchangée si souci */ }
     let sortie = c.toDataURL("image/jpeg", 0.68);
     if (sortie.length > 350000) sortie = c.toDataURL("image/jpeg", 0.5);
     URL.revokeObjectURL(url);
@@ -175,6 +176,62 @@ const compresserPhoto = (fichier) => new Promise((resoudre, rejeter) => {
   img.onerror = () => { URL.revokeObjectURL(url); rejeter(new Error("Photo illisible")); };
   img.src = url;
 });
+
+/* ---- amélioration photo automatique : lumière, contraste, netteté ---- */
+const ameliorerPhoto = (ctx, cote) => {
+  const donnees = ctx.getImageData(0, 0, cote, cote);
+  const px = donnees.data;
+  const n = px.length;
+
+  // histogramme de luminosité (fond blanc exclu pour ne pas fausser)
+  const histo = new Array(256).fill(0);
+  let comptes = 0;
+  for (let i = 0; i < n; i += 4) {
+    const l = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+    if (l < 252) { histo[l]++; comptes++; }
+  }
+  if (comptes > 1000) {
+    // bornes aux percentiles 1% et 99%
+    let bas = 0, haut = 255, cumul = 0;
+    for (let v = 0; v < 256; v++) { cumul += histo[v]; if (cumul >= comptes * 0.01) { bas = v; break; } }
+    cumul = 0;
+    for (let v = 255; v >= 0; v--) { cumul += histo[v]; if (cumul >= comptes * 0.01) { haut = v; break; } }
+    const plage = haut - bas;
+    // étirement seulement si la photo est terne (plage resserrée) — « si besoin »
+    if (plage > 20 && plage < 235) {
+      const gain = 245 / plage;
+      for (let i = 0; i < n; i += 4) {
+        for (let c = 0; c < 3; c++) {
+          px[i + c] = Math.max(0, Math.min(255, (px[i + c] - bas) * gain + 6));
+        }
+      }
+    }
+    // légère saturation (+10 %) pour raviver les fils
+    for (let i = 0; i < n; i += 4) {
+      const gr = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      px[i]     = Math.max(0, Math.min(255, gr + (px[i]     - gr) * 1.1));
+      px[i + 1] = Math.max(0, Math.min(255, gr + (px[i + 1] - gr) * 1.1));
+      px[i + 2] = Math.max(0, Math.min(255, gr + (px[i + 2] - gr) * 1.1));
+    }
+  }
+
+  // netteté douce (masque flou 3×3, mélange léger)
+  const copie = new Uint8ClampedArray(px);
+  const L = cote * 4;
+  const force = 0.45;
+  for (let y = 1; y < cote - 1; y++) {
+    for (let x = 1; x < cote - 1; x++) {
+      const i = y * L + x * 4;
+      for (let c = 0; c < 3; c++) {
+        const flou = (copie[i - L + c - 4] + copie[i - L + c] + copie[i - L + c + 4] +
+                      copie[i + c - 4]     + copie[i + c]     + copie[i + c + 4] +
+                      copie[i + L + c - 4] + copie[i + L + c] + copie[i + L + c + 4]) / 9;
+        px[i + c] = Math.max(0, Math.min(255, copie[i + c] + (copie[i + c] - flou) * force));
+      }
+    }
+  }
+  ctx.putImageData(donnees, 0, 0);
+};
 const tailleKo = (base64) => Math.round(((base64 && base64.length) || 0) * 0.75 / 1024);
 
 /* ================================================================== */
@@ -783,6 +840,7 @@ function NathPointBrod() {
         const y = r.y === null ? (S - dh) / 2 : r.y;
         ctx.drawImage(img, x * F, y * F, dw * F, dh * F);
       }
+      try { ameliorerPhoto(ctx, cote); } catch (e) { /* photo inchangée si souci */ }
       let sortie = c.toDataURL("image/jpeg", 0.68);
       if (sortie.length > 350000) sortie = c.toDataURL("image/jpeg", 0.5);
       URL.revokeObjectURL(r.src);
@@ -1566,7 +1624,7 @@ function NathPointBrod() {
                         ))}
                         {photos.length < 4 && (
                           <label className="photo-bouton">📷 {photos.length ? "+ Vue" : "Photo"}
-                            <input type="file" accept="image/*" capture="environment" className="photo-input"
+                            <input type="file" accept="image/*" className="photo-input"
                               onChange={(e) => {
                                 const f = e.target.files && e.target.files[0];
                                 if (f) ouvrirRecadrage(p, f);
@@ -2088,7 +2146,7 @@ function NathPointBrod() {
                   ))}
                   {photos.length < 4 && (
                     <label className="photo-bouton">📷 + Vue
-                      <input type="file" accept="image/*" capture="environment" className="photo-input"
+                      <input type="file" accept="image/*" className="photo-input"
                         onChange={(e) => {
                           const f = e.target.files && e.target.files[0];
                           if (f) ouvrirRecadrage(art, f);
